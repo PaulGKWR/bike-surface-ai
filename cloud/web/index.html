@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bike Surface AI - Road Condition Mapping</title>
+    
+    <!-- Leaflet CSS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" 
+          integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" 
+          crossorigin=""/>
+    
+    <!-- Custom CSS -->
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div id="app">
+        <!-- Header -->
+        <header class="header">
+            <div class="header-content">
+                <h1>🚴 Bike Surface AI</h1>
+                <p class="subtitle">Real-time road surface condition mapping</p>
+            </div>
+            <div class="header-stats" id="header-stats">
+                <div class="stat-item">
+                    <span class="stat-value" id="total-rides">0</span>
+                    <span class="stat-label">Rides</span>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-value" id="total-detections">0</span>
+                    <span class="stat-label">Detections</span>
+                </div>
+            </div>
+        </header>
+        
+        <!-- Controls Panel -->
+        <div class="controls-panel">
+            <div class="controls-left">
+                <button id="refresh-btn" class="btn btn-primary" onclick="loadRides()">
+                    🔄 Refresh Data
+                </button>
+                <select id="ride-select" class="select" onchange="displayRide()">
+                    <option value="">Select a ride...</option>
+                </select>
+                <span id="loading-indicator" class="loading-indicator" style="display: none;">
+                    Loading...
+                </span>
+            </div>
+            
+            <div class="controls-right">
+                <button id="toggle-legend-btn" class="btn btn-secondary" onclick="toggleLegend()">
+                    📋 Legend
+                </button>
+                <button id="clear-map-btn" class="btn btn-secondary" onclick="clearMap()">
+                    🗑️ Clear Map
+                </button>
+            </div>
+        </div>
+        
+        <!-- Main Content -->
+        <div class="main-content">
+            <!-- Map Container -->
+            <div id="map" class="map-container"></div>
+            
+            <!-- Legend Panel -->
+            <div id="legend-panel" class="legend-panel">
+                <h3>Detection Types</h3>
+                
+                <div class="legend-section">
+                    <h4>Damages</h4>
+                    <div class="legend-item">
+                        <span class="legend-marker pothole"></span>
+                        <span>Pothole (High severity)</span>
+                    </div>
+                    <div class="legend-item">
+                        <span class="legend-marker crack"></span>
+                        <span>Crack</span>
+                    </div>
+                    <div class="legend-item">
+                        <span class="legend-marker patch"></span>
+                        <span>Patch/Repair</span>
+                    </div>
+                    <div class="legend-item">
+                        <span class="legend-marker bump"></span>
+                        <span>Bump/Speed Bump</span>
+                    </div>
+                    <div class="legend-item">
+                        <span class="legend-marker debris"></span>
+                        <span>Debris</span>
+                    </div>
+                </div>
+                
+                <div class="legend-section">
+                    <h4>Surface Types</h4>
+                    <div class="legend-item">
+                        <span class="legend-marker asphalt"></span>
+                        <span>Asphalt</span>
+                    </div>
+                    <div class="legend-item">
+                        <span class="legend-marker concrete"></span>
+                        <span>Concrete</span>
+                    </div>
+                    <div class="legend-item">
+                        <span class="legend-marker gravel"></span>
+                        <span>Gravel</span>
+                    </div>
+                    <div class="legend-item">
+                        <span class="legend-marker cobblestone"></span>
+                        <span>Cobblestone</span>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Info Panel -->
+            <div id="info-panel" class="info-panel">
+                <h3>Ride Information</h3>
+                <div id="ride-info" class="ride-info">
+                    <p class="info-placeholder">Select a ride to view details</p>
+                </div>
+                
+                <h3>Detection Details</h3>
+                <div id="detection-details" class="detection-details">
+                    <p class="info-placeholder">Click on a marker to view detection details</p>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Footer -->
+        <footer class="footer">
+            <p>Bike Surface AI &copy; 2025 | Data updates in real-time</p>
+        </footer>
+    </div>
+    
+    <!-- Leaflet JavaScript -->
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" 
+            integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" 
+            crossorigin=""></script>
+    
+    <!-- Custom JavaScript -->
+    <script src="script.js"></script>
+</body>
+</html>

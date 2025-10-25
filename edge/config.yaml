@@ -1,0 +1,43 @@
+# Edge device configuration for Jetson Orin Nano
+model:
+  path: "models/surface_detection.engine"  # TensorRT engine file
+  confidence_threshold: 0.5
+  nms_threshold: 0.4
+  input_size: [640, 640]
+  classes:
+    - "asphalt"
+    - "concrete"
+    - "gravel"
+    - "cobblestone"
+    - "pothole"
+    - "crack"
+    - "patch"
+    - "bump"
+    - "debris"
+
+gps:
+  port: "/dev/ttyACM0"  # GPS module serial port (adjust for your system)
+  baudrate: 9600
+  timeout: 5
+  update_rate: 1  # Hz
+
+camera:
+  device_id: 0  # Camera device ID
+  resolution: [1280, 720]
+  fps: 10
+  
+cloud:
+  api_url: "http://localhost:8000"  # Change to your cloud API URL
+  upload_interval: 30  # seconds
+  batch_size: 10
+  timeout: 30
+
+logging:
+  level: "INFO"
+  file: "edge_system.log"
+  max_bytes: 10485760  # 10MB
+  backup_count: 3
+
+storage:
+  backup_dir: "local_backups"
+  max_backup_files: 100

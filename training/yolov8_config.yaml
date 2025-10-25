@@ -1,0 +1,59 @@
+# YOLOv8 Training Configuration for Bike Surface AI
+# Configuration for training surface and damage detection model
+
+# Model Configuration
+model_size: "yolov8n.pt"  # Options: yolov8n, yolov8s, yolov8m, yolov8l, yolov8x
+experiment_name: "bike_surface_v1"
+
+# Dataset Configuration
+data_path: "datasets/surface_dataset.yaml"
+
+# Training Hyperparameters
+epochs: 100
+batch_size: 16
+image_size: 640
+workers: 4
+learning_rate: 0.01
+optimizer: "SGD"  # Options: SGD, Adam, AdamW
+patience: 50  # Early stopping patience
+save_period: 10  # Save checkpoint every N epochs
+seed: 0
+
+# Class Configuration
+classes:
+  - "asphalt"
+  - "concrete"
+  - "gravel"
+  - "cobblestone"
+  - "pothole"
+  - "crack"
+  - "patch"
+  - "bump"
+  - "debris"
+
+# Data Augmentation
+augmentation:
+  hsv_h: 0.015      # HSV-Hue augmentation
+  hsv_s: 0.7        # HSV-Saturation augmentation
+  hsv_v: 0.4        # HSV-Value augmentation
+  degrees: 5.0      # Rotation (+/- deg)
+  translate: 0.1    # Translation (+/- fraction)
+  scale: 0.5        # Scale (+/- gain)
+  shear: 0.0        # Shear (+/- deg)
+  perspective: 0.0  # Perspective (+/- fraction)
+  flipud: 0.0       # Flip up-down (probability)
+  fliplr: 0.5       # Flip left-right (probability)
+  mosaic: 1.0       # Mosaic augmentation (probability)
+  mixup: 0.1        # MixUp augmentation (probability)
+
+# Model Export Configuration
+export:
+  onnx:
+    opset_version: 12
+    simplify: true
+    dynamic: false
+  
+  tensorrt:
+    workspace_size: 4  # GB
+    fp16: true
+    int8: false

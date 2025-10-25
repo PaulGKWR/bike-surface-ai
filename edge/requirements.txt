@@ -1,0 +1,22 @@
+# Core dependencies for edge device (Jetson Orin Nano)
+ultralytics==8.0.200
+opencv-python==4.8.1.78
+numpy==1.24.3
+pyyaml==6.0.1
+requests==2.31.0
+
+# GPS module dependencies
+pyserial==3.5
+pynmea2==1.19.0
+
+# Optional: ONNX Runtime for model inference
+onnxruntime-gpu==1.16.1  # Use this on Jetson with GPU support
+# onnxruntime==1.16.1  # Use this for CPU-only systems
+
+# TensorRT and PyCUDA (pre-installed on Jetson with JetPack)
+# tensorrt>=8.5.0  # Already included in JetPack
+# pycuda>=2022.1  # Already included in JetPack
+
+# Async support
+aiohttp==3.9.0
+asyncio-mqtt==0.16.1

@@ -1,0 +1,310 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bike Surface AI - Demo Viewer</title>
+    
+    <!-- Leaflet CSS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" 
+          integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" 
+          crossorigin=""/>
+    
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+        
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 1rem 2rem;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+        }
+        
+        .header h1 {
+            font-size: 1.8rem;
+            margin-bottom: 0.25rem;
+        }
+        
+        .subtitle {
+            font-size: 0.9rem;
+            opacity: 0.9;
+        }
+        
+        .controls {
+            background: white;
+            padding: 1rem 2rem;
+            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.05);
+            display: flex;
+            gap: 1rem;
+            align-items: center;
+        }
+        
+        .btn {
+            padding: 0.6rem 1.2rem;
+            border: none;
+            border-radius: 6px;
+            font-size: 0.95rem;
+            cursor: pointer;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            font-weight: 500;
+        }
+        
+        .btn:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
+        }
+        
+        #map {
+            flex: 1;
+            position: relative;
+        }
+        
+        .legend {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            background: white;
+            padding: 1rem;
+            border-radius: 8px;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+            z-index: 1000;
+            max-width: 200px;
+        }
+        
+        .legend h3 {
+            font-size: 1rem;
+            margin-bottom: 0.75rem;
+        }
+        
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            margin: 0.5rem 0;
+            font-size: 0.85rem;
+        }
+        
+        .marker-dot {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            border: 2px solid white;
+            box-shadow: 0 0 3px rgba(0, 0, 0, 0.3);
+        }
+        
+        .info-box {
+            position: absolute;
+            bottom: 20px;
+            left: 20px;
+            background: white;
+            padding: 1rem;
+            border-radius: 8px;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+            z-index: 1000;
+            max-width: 300px;
+        }
+        
+        .info-box h3 {
+            font-size: 0.95rem;
+            margin-bottom: 0.5rem;
+        }
+        
+        .info-item {
+            font-size: 0.85rem;
+            margin: 0.25rem 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>🚴 Bike Surface AI - Demo</h1>
+        <p class="subtitle">Straßenzustands-Erkennung für Ried (86510 Aichach-Friedberg, Bayern)</p>
+    </div>
+    
+    <div class="controls">
+        <button class="btn" onclick="loadDemoData()">🔄 Demo-Daten laden</button>
+        <input type="file" id="fileInput" accept=".geojson" style="display: none;" onchange="loadFile(event)">
+        <button class="btn" onclick="document.getElementById('fileInput').click()">📂 GeoJSON laden</button>
+    </div>
+    
+    <div id="map">
+        <div class="legend">
+            <h3>Detektions-Typen</h3>
+            <div class="legend-item">
+                <span class="marker-dot" style="background-color: #FF0000;"></span>
+                <span>Schlagloch</span>
+            </div>
+            <div class="legend-item">
+                <span class="marker-dot" style="background-color: #FFA500;"></span>
+                <span>Riss</span>
+            </div>
+            <div class="legend-item">
+                <span class="marker-dot" style="background-color: #FFFF00;"></span>
+                <span>Flickstelle</span>
+            </div>
+            <div class="legend-item">
+                <span class="marker-dot" style="background-color: #00FF00;"></span>
+                <span>Bodenwelle</span>
+            </div>
+            <div class="legend-item">
+                <span class="marker-dot" style="background-color: #333333;"></span>
+                <span>Asphalt</span>
+            </div>
+            <div class="legend-item">
+                <span class="marker-dot" style="background-color: #8B4513;"></span>
+                <span>Schotter</span>
+            </div>
+        </div>
+        
+        <div class="info-box" id="info">
+            <h3>📊 Statistik</h3>
+            <div id="stats">Lade Demo-Daten...</div>
+        </div>
+    </div>
+    
+    <!-- Leaflet JavaScript -->
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" 
+            integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" 
+            crossorigin=""></script>
+    
+    <script>
+        const COLORS = {
+            'pothole': '#FF0000',
+            'crack': '#FFA500',
+            'patch': '#FFFF00',
+            'bump': '#00FF00',
+            'asphalt': '#333333',
+            'concrete': '#888888',
+            'gravel': '#8B4513',
+            'cobblestone': '#CD853F'
+        };
+        
+        const LABELS = {
+            'pothole': 'Schlagloch',
+            'crack': 'Riss',
+            'patch': 'Flickstelle',
+            'bump': 'Bodenwelle',
+            'asphalt': 'Asphalt',
+            'gravel': 'Schotter',
+            'concrete': 'Beton',
+            'cobblestone': 'Kopfsteinpflaster'
+        };
+        
+        let map;
+        let markersLayer;
+        
+        // Initialize map
+        function initMap() {
+            // Ried bei Aichach-Friedberg, Bayern (86510) - Exakte Koordinaten: 48.2905°N, 11.0434°E
+            map = L.map('map').setView([48.2905, 11.0434], 14);
+            
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                attribution: '© OpenStreetMap contributors',
+                maxZoom: 19
+            }).addTo(map);
+            
+            markersLayer = L.layerGroup().addTo(map);
+        }
+        
+        // Demo data embedded directly (Ried bei Aichach-Friedberg, 86510 - Exakte Koordinaten: 48.2905°N, 11.0434°E)
+        const demoData = {"type":"FeatureCollection","features":[{"type":"Feature","geometry":{"type":"Point","coordinates":[11.05330248237024,48.30017486617285]},"properties":{"timestamp":1761371727.652998,"detections":[{"class":"gravel","confidence":0.9258178775115353,"bbox":[148,133,503,520]}],"speed":17.290301763536586}},{"type":"Feature","geometry":{"type":"Point","coordinates":[11.047351354052708,48.28910772028119]},"properties":{"timestamp":1761371737.652998,"detections":[{"class":"pothole","confidence":0.7368732456231258,"bbox":[262,155,510,478]}],"speed":18.85089032501543}},{"type":"Feature","geometry":{"type":"Point","coordinates":[11.045998408327256,48.297623774050166]},"properties":{"timestamp":1761371747.652998,"detections":[{"class":"bump","confidence":0.9419707276710871,"bbox":[200,103,600,417]}],"speed":23.889432453930127}},{"type":"Feature","geometry":{"type":"Point","coordinates":[11.03821113410591,48.29360657062943]},"properties":{"timestamp":1761371757.653998,"detections":[{"class":"gravel","confidence":0.723107842838427,"bbox":[217,165,435,410]}],"speed":12.891162436982231}},{"type":"Feature","geometry":{"type":"Point","coordinates":[11.03838193929199,48.287589202514155]},"properties":{"timestamp":1761371767.653998,"detections":[{"class":"pothole","confidence":0.8064681355628579,"bbox":[196,115,501,568]}],"speed":12.914025884105392}},{"type":"Feature","geometry":{"type":"Point","coordinates":[11.048272309079133,48.29661081086662]},"properties":{"timestamp":1761371777.654998,"detections":[{"class":"patch","confidence":0.7176194654246553,"bbox":[265,189,489,481]}],"speed":22.786493187786306}},{"type":"Feature","geometry":{"type":"Point","coordinates":[11.041156228986363,48.298867964385806]},"properties":{"timestamp":1761371787.654998,"detections":[{"class":"patch","confidence":0.8886854577972897,"bbox":[165,125,481,551]}],"speed":24.3124537699518}},{"type":"Feature","geometry":{"type":"Point","coordinates":[11.0417774070739,48.28295435036416]},"properties":{"timestamp":1761371797.655998,"detections":[{"class":"asphalt","confidence":0.9001536193152258,"bbox":[148,115,479,500]}],"speed":24.35593487427063}},{"type":"Feature","geometry":{"type":"Point","coordinates":[11.053225842071992,48.28844543332897]},"properties":{"timestamp":1761371807.655998,"detections":[{"class":"bump","confidence":0.9444620522264524,"bbox":[279,246,418,473]}],"speed":24.363164340517358}},{"type":"Feature","geometry":{"type":"Point","coordinates":[11.05095717021803,48.2965481385914]},"properties":{"timestamp":1761371817.655998,"detections":[{"class":"crack","confidence":0.6844320820238858,"bbox":[143,254,538,408]}],"speed":12.056640677118512}}]};
+        
+        // Load demo data
+        function loadDemoData() {
+            displayData(demoData);
+        }
+        
+        // Load file from input
+        function loadFile(event) {
+            const file = event.target.files[0];
+            const reader = new FileReader();
+            
+            reader.onload = function(e) {
+                const data = JSON.parse(e.target.result);
+                displayData(data);
+            };
+            
+            reader.readAsText(file);
+        }
+        
+        // Display GeoJSON data
+        function displayData(geojson) {
+            markersLayer.clearLayers();
+            
+            const features = geojson.features;
+            const bounds = [];
+            const stats = {};
+            
+            features.forEach(feature => {
+                const coords = feature.geometry.coordinates;
+                const props = feature.properties;
+                
+                bounds.push([coords[1], coords[0]]);
+                
+                props.detections.forEach(detection => {
+                    const className = detection.class;
+                    stats[className] = (stats[className] || 0) + 1;
+                    
+                    const color = COLORS[className] || '#999999';
+                    const label = LABELS[className] || className;
+                    
+                    const icon = L.divIcon({
+                        className: 'custom-marker',
+                        html: `<div style="background-color: ${color}; width: 12px; height: 12px; border-radius: 50%; border: 2px solid white; box-shadow: 0 0 3px rgba(0,0,0,0.5);"></div>`,
+                        iconSize: [16, 16],
+                        iconAnchor: [8, 8]
+                    });
+                    
+                    const marker = L.marker([coords[1], coords[0]], { icon: icon });
+                    
+                    const time = new Date(props.timestamp * 1000).toLocaleString('de-DE');
+                    const confidence = (detection.confidence * 100).toFixed(1);
+                    
+                    marker.bindPopup(`
+                        <div style="font-family: Arial; min-width: 200px;">
+                            <h4 style="margin: 0 0 0.5rem 0; color: ${color};">${label}</h4>
+                            <p style="margin: 0.25rem 0; font-size: 0.9rem;"><strong>Konfidenz:</strong> ${confidence}%</p>
+                            <p style="margin: 0.25rem 0; font-size: 0.9rem;"><strong>Zeit:</strong> ${time}</p>
+                            <p style="margin: 0.25rem 0; font-size: 0.9rem;"><strong>Koordinaten:</strong> ${coords[1].toFixed(6)}, ${coords[0].toFixed(6)}</p>
+                            ${props.speed ? `<p style="margin: 0.25rem 0; font-size: 0.9rem;"><strong>Geschwindigkeit:</strong> ${props.speed.toFixed(1)} km/h</p>` : ''}
+                        </div>
+                    `);
+                    
+                    marker.addTo(markersLayer);
+                });
+            });
+            
+            // Update statistics
+            let statsHTML = `<div class="info-item"><strong>Gesamt:</strong> ${features.length} Detektionen</div>`;
+            for (const [className, count] of Object.entries(stats).sort((a, b) => b[1] - a[1])) {
+                const label = LABELS[className] || className;
+                statsHTML += `<div class="info-item"><strong>${label}:</strong> ${count}</div>`;
+            }
+            document.getElementById('stats').innerHTML = statsHTML;
+            
+            // Fit map to bounds
+            if (bounds.length > 0) {
+                map.fitBounds(bounds, { padding: [50, 50] });
+            }
+        }
+        
+        // Initialize on load
+        window.onload = function() {
+            initMap();
+            loadDemoData();
+        };
+    </script>
+</body>
+</html>

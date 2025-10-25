@@ -1,0 +1,486 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bike Surface AI - Route Demo</title>
+    
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+        
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 1rem 2rem;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        
+        .header h1 {
+            font-size: 1.5rem;
+            margin-bottom: 0.25rem;
+        }
+        
+        .subtitle {
+            font-size: 0.9rem;
+            opacity: 0.9;
+        }
+        
+        .controls {
+            padding: 1rem 2rem;
+            background: white;
+            border-bottom: 1px solid #e0e0e0;
+            display: flex;
+            gap: 1rem;
+            align-items: center;
+        }
+        
+        .btn {
+            padding: 0.5rem 1rem;
+            background: #667eea;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 0.9rem;
+            transition: background 0.3s;
+        }
+        
+        .btn:hover {
+            background: #5568d3;
+        }
+        
+        #map {
+            flex: 1;
+            position: relative;
+        }
+        
+        .legend {
+            position: absolute;
+            bottom: 20px;
+            right: 20px;
+            background: white;
+            padding: 1rem;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.2);
+            z-index: 1000;
+            max-width: 220px;
+        }
+        
+        .legend h3 {
+            font-size: 0.95rem;
+            margin-bottom: 0.75rem;
+            border-bottom: 2px solid #667eea;
+            padding-bottom: 0.5rem;
+        }
+        
+        .legend-item {
+            display: flex;
+            align-items: center;
+            margin: 0.5rem 0;
+            font-size: 0.85rem;
+        }
+        
+        .marker-dot {
+            width: 14px;
+            height: 14px;
+            border-radius: 50%;
+            margin-right: 0.5rem;
+            border: 2px solid white;
+            box-shadow: 0 0 4px rgba(0,0,0,0.3);
+        }
+        
+        .route-line {
+            width: 30px;
+            height: 4px;
+            margin-right: 0.5rem;
+            border-radius: 2px;
+        }
+        
+        /* Pulse animation for problem markers */
+        @keyframes pulse {
+            0% {
+                transform: scale(1);
+                opacity: 0.3;
+            }
+            50% {
+                transform: scale(2);
+                opacity: 0;
+            }
+            100% {
+                transform: scale(1);
+                opacity: 0.3;
+            }
+        }
+        
+        .stats-box {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            background: white;
+            padding: 1rem;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.2);
+            z-index: 1000;
+            max-width: 300px;
+        }
+        
+        .stats-box h3 {
+            font-size: 0.95rem;
+            margin-bottom: 0.5rem;
+        }
+        
+        .stat-item {
+            font-size: 0.85rem;
+            margin: 0.25rem 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>🚴 Bike Surface AI - Routen Demo</h1>
+        <p class="subtitle">Route: Ried → Baindlkirch mit Problemerkennung</p>
+    </div>
+    
+    <div class="controls">
+        <button class="btn" onclick="loadDemoData()">🔄 Demo-Route laden</button>
+        <input type="file" id="fileInput" accept=".geojson" style="display: none;" onchange="loadFile(event)">
+        <button class="btn" onclick="document.getElementById('fileInput').click()">📂 GeoJSON laden</button>
+    </div>
+    
+    <div id="map">
+        <div class="legend">
+            <h3>Legende</h3>
+            <div class="legend-item">
+                <div class="route-line" style="background-color: #00AA00;"></div>
+                <span>Route (gut)</span>
+            </div>
+            <hr style="margin: 0.5rem 0; border: none; border-top: 1px solid #e0e0e0;">
+            <div class="legend-item">
+                <span class="marker-dot" style="background-color: #FF0000;"></span>
+                <span>Schlagloch</span>
+            </div>
+            <div class="legend-item">
+                <span class="marker-dot" style="background-color: #FFA500;"></span>
+                <span>Riss</span>
+            </div>
+            <div class="legend-item">
+                <span class="marker-dot" style="background-color: #FFFF00;"></span>
+                <span>Flickstelle</span>
+            </div>
+            <div class="legend-item">
+                <span class="marker-dot" style="background-color: #00FF00;"></span>
+                <span>Bodenwelle</span>
+            </div>
+            <div class="legend-item">
+                <span class="marker-dot" style="background-color: #8B4513;"></span>
+                <span>Schotter</span>
+            </div>
+        </div>
+    </div>
+    
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    
+    <script>
+        const COLORS = {
+            'pothole': '#FF0000',
+            'crack': '#FFA500',
+            'patch': '#FFFF00',
+            'bump': '#00FF00',
+            'asphalt': '#333333',
+            'concrete': '#888888',
+            'gravel': '#8B4513',
+            'cobblestone': '#CD853F'
+        };
+        
+        const LABELS = {
+            'pothole': 'Schlagloch',
+            'crack': 'Riss',
+            'patch': 'Flickstelle',
+            'bump': 'Bodenwelle',
+            'asphalt': 'Asphalt',
+            'gravel': 'Schotter',
+            'concrete': 'Beton',
+            'cobblestone': 'Kopfsteinpflaster'
+        };
+        
+        let map;
+        let markersLayer;
+        
+        // Initialize map
+        function initMap() {
+            // Ried bei Aichach-Friedberg, Bayern (86510) - Exakte Koordinaten: 48.2905°N, 11.0434°E
+            map = L.map('map').setView([48.2985, 11.0530], 13);
+            
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                attribution: '© OpenStreetMap contributors',
+                maxZoom: 19
+            }).addTo(map);
+            
+            markersLayer = L.layerGroup().addTo(map);
+        }
+        
+        // Demo data will be loaded here
+        const demoData = null;
+        
+        // Load demo data from file
+        function loadDemoData() {
+            console.log('Attempting to load demo_ride.geojson...');
+            fetch('demo_ride.geojson')
+                .then(response => {
+                    console.log('Response received:', response.status);
+                    if (!response.ok) {
+                        throw new Error(`HTTP error! status: ${response.status}`);
+                    }
+                    return response.json();
+                })
+                .then(data => {
+                    console.log('Data loaded successfully:', data);
+                    console.log('Number of features:', data.features.length);
+                    displayData(data);
+                })
+                .catch(error => {
+                    console.error('Error loading demo data:', error);
+                    alert('Fehler beim Laden der Demo-Daten. Stelle sicher, dass:\n1. "python demo.py" ausgeführt wurde\n2. Ein lokaler Server läuft (z.B. "python -m http.server 8080")\n3. Du die Seite über http://localhost:8080/demo_viewer_route.html öffnest\n\nFehler: ' + error.message);
+                });
+        }
+        
+        // Load file from input
+        function loadFile(event) {
+            const file = event.target.files[0];
+            const reader = new FileReader();
+            
+            reader.onload = function(e) {
+                const data = JSON.parse(e.target.result);
+                displayData(data);
+            };
+            
+            reader.readAsText(file);
+        }
+        
+        // Display GeoJSON data
+        function displayData(geojson) {
+            console.log('displayData called with:', geojson);
+            markersLayer.clearLayers();
+            
+            if (!geojson || !geojson.features) {
+                console.error('Invalid GeoJSON data');
+                alert('Ungültige GeoJSON-Daten!');
+                return;
+            }
+            
+            const features = geojson.features;
+            const bounds = [];
+            const stats = {};
+            let routeDistance = 0;
+            
+            console.log(`Processing ${features.length} features...`);
+            
+            features.forEach((feature, index) => {
+                console.log(`Feature ${index}:`, feature.geometry.type);
+                const geomType = feature.geometry.type;
+                
+                // Handle LineString (route)
+                if (geomType === 'LineString') {
+                    console.log('Drawing route line...');
+                    const coords = feature.geometry.coordinates.map(c => [c[1], c[0]]);
+                    routeDistance = feature.properties.distance_km || 0;
+                    
+                    console.log(`Route has ${coords.length} points`);
+                    
+                    // Draw route as green line
+                    const routeLine = L.polyline(coords, {
+                        color: '#00AA00',
+                        weight: 5,
+                        opacity: 0.8,
+                        smoothFactor: 1
+                    });
+                    
+                    const status = feature.properties.status === 'good' ? '✅ Gut befahrbar' : '⚠️ Aufmerksamkeit erforderlich';
+                    
+                    routeLine.bindPopup(`
+                        <div style="font-family: Arial; min-width: 220px;">
+                            <h3 style="margin: 0 0 0.75rem 0; color: #00AA00; border-bottom: 2px solid #00AA00; padding-bottom: 0.5rem;">
+                                🚴 ${feature.properties.name}
+                            </h3>
+                            <p style="margin: 0.25rem 0; font-size: 0.9rem;"><strong>Status:</strong> ${status}</p>
+                            <p style="margin: 0.25rem 0; font-size: 0.9rem;"><strong>Distanz:</strong> ~${routeDistance.toFixed(1)} km</p>
+                        </div>
+                    `);
+                    
+                    markersLayer.addLayer(routeLine);
+                    coords.forEach(c => bounds.push(c));
+                    console.log('Route line added to map');
+                }
+                // Handle Point (problem detection)
+                else if (geomType === 'Point') {
+                    console.log('Drawing problem marker...');
+                    const coords = feature.geometry.coordinates;
+                    const props = feature.properties;
+                    
+                    if (!props || !props.detections) {
+                        console.warn('Feature missing properties or detections:', feature);
+                        return;
+                    }
+                    
+                    bounds.push([coords[1], coords[0]]);
+                    
+                    props.detections.forEach(detection => {
+                        const className = detection.class;
+                        stats[className] = (stats[className] || 0) + 1;
+                        
+                        const color = COLORS[className] || '#999999';
+                        const label = LABELS[className] || className;
+                        
+                        console.log(`Adding marker for ${className} at [${coords[1]}, ${coords[0]}]`);
+                        
+                        // Create pulsing marker for problems
+                        const icon = L.divIcon({
+                            className: 'custom-marker',
+                            html: `
+                                <div style="position: relative;">
+                                    <div style="
+                                        background-color: ${color}; 
+                                        width: 18px; 
+                                        height: 18px; 
+                                        border-radius: 50%; 
+                                        border: 3px solid white; 
+                                        box-shadow: 0 0 8px rgba(0,0,0,0.6);
+                                        position: relative;
+                                        z-index: 100;
+                                    "></div>
+                                    <div style="
+                                        position: absolute;
+                                        top: 0;
+                                        left: 0;
+                                        width: 18px;
+                                        height: 18px;
+                                        border-radius: 50%;
+                                        background-color: ${color};
+                                        opacity: 0.3;
+                                        animation: pulse 2s infinite;
+                                    "></div>
+                                </div>
+                            `,
+                            iconSize: [24, 24],
+                            iconAnchor: [12, 12]
+                        });
+                        
+                        const marker = L.marker([coords[1], coords[0]], { icon: icon });
+                        
+                        const time = props.time_formatted || new Date(props.timestamp * 1000).toLocaleTimeString('de-DE');
+                        const confidence = (detection.confidence * 100).toFixed(1);
+                        const speed = props.speed ? props.speed.toFixed(1) : 'N/A';
+                        
+                        // Create detailed popup with hover info
+                        const popupContent = `
+                            <div style="font-family: Arial; min-width: 260px;">
+                                <h3 style="margin: 0 0 0.75rem 0; color: ${color}; border-bottom: 2px solid ${color}; padding-bottom: 0.5rem;">
+                                    ⚠️ ${label}
+                                </h3>
+                                ${detection.image_url ? `<img src="${detection.image_url}" style="width: 100%; border-radius: 4px; margin-bottom: 0.75rem;" alt="${label}">` : ''}
+                                <div style="background: #f5f5f5; padding: 0.75rem; border-radius: 6px; margin-bottom: 0.75rem;">
+                                    <p style="margin: 0.35rem 0; font-size: 0.95rem;"><strong>🎯 Konfidenz:</strong> ${confidence}%</p>
+                                    <p style="margin: 0.35rem 0; font-size: 0.95rem;"><strong>🕐 Uhrzeit:</strong> ${time}</p>
+                                    <p style="margin: 0.35rem 0; font-size: 0.95rem;"><strong>⚡ Geschwindigkeit:</strong> ${speed} km/h</p>
+                                </div>
+                                <p style="margin: 0.35rem 0; font-size: 0.85rem; color: #666;">
+                                    <strong>📍 Koordinaten:</strong><br/>
+                                    ${coords[1].toFixed(6)}°N, ${coords[0].toFixed(6)}°E
+                                </p>
+                            </div>
+                        `;
+                        
+                        marker.bindPopup(popupContent);
+                        
+                        // Hover tooltip
+                        marker.bindTooltip(`${label} (${confidence}%)`, {
+                            permanent: false,
+                            direction: 'top',
+                            offset: [0, -15],
+                            className: 'custom-tooltip'
+                        });
+                        
+                        markersLayer.addLayer(marker);
+                        console.log(`Marker added for ${className}`);
+                    });
+                }
+            });
+            
+            console.log(`Total bounds: ${bounds.length}`);
+            
+            // Fit map to bounds
+            if (bounds.length > 0) {
+                console.log('Fitting map to bounds...');
+                map.fitBounds(bounds, { padding: [50, 50] });
+            } else {
+                console.warn('No bounds to fit!');
+            }
+            
+            // Show statistics
+            if (Object.keys(stats).length > 0) {
+                console.log('Showing statistics:', stats);
+                showStats(stats, routeDistance);
+            } else {
+                console.warn('No statistics to show!');
+            }
+            
+            console.log('displayData completed');
+        }
+        
+        // Show statistics overlay
+        function showStats(stats, distance) {
+            const existingStats = document.querySelector('.stats-box');
+            if (existingStats) {
+                existingStats.remove();
+            }
+            
+            const totalProblems = Object.values(stats).reduce((a, b) => a + b, 0);
+            
+            let statsHTML = '<h3>📊 Erkennungsstatistik</h3>';
+            statsHTML += `<div class="stat-item"><strong>Strecke:</strong> ${distance.toFixed(1)} km</div>`;
+            statsHTML += `<div class="stat-item"><strong>Probleme gesamt:</strong> ${totalProblems}</div>`;
+            statsHTML += '<hr style="margin: 0.5rem 0; border: none; border-top: 1px solid #e0e0e0;">';
+            
+            for (const [className, count] of Object.entries(stats).sort((a, b) => b[1] - a[1])) {
+                const label = LABELS[className] || className;
+                const color = COLORS[className] || '#999999';
+                statsHTML += `
+                    <div class="stat-item">
+                        <span class="marker-dot" style="background-color: ${color}; display: inline-block; vertical-align: middle;"></span>
+                        ${label}: ${count}
+                    </div>
+                `;
+            }
+            
+            const statsBox = document.createElement('div');
+            statsBox.className = 'stats-box';
+            statsBox.innerHTML = statsHTML;
+            document.getElementById('map').appendChild(statsBox);
+        }
+        
+        // Initialize on load
+        window.onload = function() {
+            console.log('Initializing map...');
+            initMap();
+            console.log('Map initialized, loading demo data...');
+            // Auto-load demo data on page load
+            setTimeout(() => {
+                loadDemoData();
+            }, 500);
+        };
+    </script>
+</body>
+</html>

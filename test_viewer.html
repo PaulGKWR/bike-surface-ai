@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Test Viewer</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <style>
+        body { margin: 0; padding: 0; }
+        #map { height: 100vh; width: 100vw; }
+    </style>
+</head>
+<body>
+    <div id="map"></div>
+    
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script>
+        console.log('Starting test viewer...');
+        
+        // Initialize map
+        const map = L.map('map').setView([48.2985, 11.0530], 13);
+        console.log('Map created');
+        
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            attribution: '© OpenStreetMap contributors',
+            maxZoom: 19
+        }).addTo(map);
+        console.log('Tile layer added');
+        
+        // Load and display data
+        fetch('demo_ride.geojson')
+            .then(response => {
+                console.log('Fetch response:', response.status);
+                return response.json();
+            })
+            .then(data => {
+                console.log('Data loaded:', data);
+                
+                // Draw route
+                data.features.forEach(feature => {
+                    if (feature.geometry.type === 'LineString') {
+                        const coords = feature.geometry.coordinates.map(c => [c[1], c[0]]);
+                        L.polyline(coords, {
+                            color: '#00AA00',
+                            weight: 5,
+                            opacity: 0.8
+                        }).addTo(map).bindPopup('Route: Ried → Baindlkirch');
+                        console.log('Route drawn with', coords.length, 'points');
+                    } else if (feature.geometry.type === 'Point') {
+                        const coords = feature.geometry.coordinates;
+                        const detection = feature.properties.detections[0];
+                        
+                        const colors = {
+                            'pothole': '#FF0000',
+                            'crack': '#FFA500', 
+                            'patch': '#FFFF00',
+                            'bump': '#00FF00',
+                            'gravel': '#8B4513'
+                        };
+                        const color = colors[detection.class] || '#999999';
+                        
+                        const popupContent = `
+                            <div style="font-family: Arial; min-width: 250px;">
+                                <h3 style="color: ${color}; margin-bottom: 0.5rem;">⚠️ ${detection.class.toUpperCase()}</h3>
+                                ${detection.image_url ? `<img src="${detection.image_url}" style="width: 100%; border-radius: 4px; margin-bottom: 0.5rem;" alt="${detection.class}">` : ''}
+                                <p><strong>Konfidenz:</strong> ${(detection.confidence * 100).toFixed(1)}%</p>
+                                <p><strong>Zeit:</strong> ${new Date(feature.properties.timestamp * 1000).toLocaleTimeString('de-DE')}</p>
+                                <p><strong>Koordinaten:</strong> ${coords[1].toFixed(6)}, ${coords[0].toFixed(6)}</p>
+                            </div>
+                        `;
+                        
+                        L.circleMarker([coords[1], coords[0]], {
+                            radius: 8,
+                            fillColor: color,
+                            color: '#fff',
+                            weight: 2,
+                            opacity: 1,
+                            fillOpacity: 0.8
+                        }).addTo(map).bindPopup(popupContent);
+                        console.log('Marker added:', detection.class);
+                    }
+                });
+                
+                console.log('All features processed');
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                alert('Fehler: ' + error.message);
+            });
+    </script>
+</body>
+</html>

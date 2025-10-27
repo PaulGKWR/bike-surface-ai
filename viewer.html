@@ -1,0 +1,933 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bike Surface AI - Straßenschäden Viewer</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: #1a1a1a;
+            color: #fff;
+            overflow: hidden;
+        }
+        
+        #map {
+            height: 100vh;
+            width: 100%;
+        }
+        
+        /* Info Panel */
+        .info-panel {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            background: rgba(255, 255, 255, 0.98);
+            padding: 25px;
+            border-radius: 12px;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+            max-width: 380px;
+            color: #333;
+            z-index: 1000;
+            backdrop-filter: blur(10px);
+        }
+        
+        .info-panel h2 {
+            margin-bottom: 18px;
+            color: #2c3e50;
+            border-bottom: 3px solid #3498db;
+            padding-bottom: 12px;
+            font-size: 22px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        
+        .stat {
+            display: flex;
+            justify-content: space-between;
+            padding: 10px 0;
+            border-bottom: 1px solid #eee;
+            align-items: center;
+        }
+        
+        .stat-label {
+            font-weight: 600;
+            color: #555;
+            font-size: 14px;
+        }
+        
+        .stat-value {
+            font-weight: bold;
+            color: #3498db;
+            font-size: 18px;
+        }
+        
+        .damage-type-stats {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+            margin-top: 15px;
+        }
+        
+        .damage-badge {
+            background: #f8f9fa;
+            padding: 8px 12px;
+            border-radius: 8px;
+            text-align: center;
+            border: 2px solid #e9ecef;
+        }
+        
+        .damage-badge-type {
+            font-size: 11px;
+            color: #7f8c8d;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        
+        .damage-badge-count {
+            font-size: 20px;
+            font-weight: bold;
+            color: #2c3e50;
+            margin-top: 4px;
+        }
+        
+        /* Legend */
+        .legend {
+            position: absolute;
+            bottom: 30px;
+            left: 20px;
+            background: rgba(255, 255, 255, 0.98);
+            padding: 18px;
+            border-radius: 10px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+            z-index: 1000;
+            backdrop-filter: blur(10px);
+        }
+        
+        .legend h3 {
+            margin-bottom: 12px;
+            color: #2c3e50;
+            font-size: 16px;
+            border-bottom: 2px solid #3498db;
+            padding-bottom: 8px;
+        }
+        
+        .legend-item {
+            display: flex;
+            align-items: center;
+            margin: 8px 0;
+            color: #555;
+            font-size: 13px;
+        }
+        
+        .legend-color {
+            width: 24px;
+            height: 24px;
+            border-radius: 50%;
+            margin-right: 12px;
+            border: 3px solid white;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+            flex-shrink: 0;
+        }
+        
+        /* Damage Markers */
+        .damage-marker {
+            border-radius: 50%;
+            border: 3px solid white;
+            box-shadow: 0 3px 12px rgba(0,0,0,0.4);
+            transition: all 0.3s ease;
+            cursor: pointer;
+        }
+        
+        .damage-marker:hover {
+            transform: scale(1.2);
+            box-shadow: 0 4px 16px rgba(0,0,0,0.6);
+        }
+        
+        .severity-high {
+            background: #e74c3c;
+        }
+        
+        .severity-medium {
+            background: #f39c12;
+        }
+        
+        .severity-low {
+            background: #f1c40f;
+        }
+        
+        /* Enhanced Popup with Image Gallery */
+        .leaflet-popup-content-wrapper {
+            border-radius: 12px;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.3);
+        }
+        
+        .leaflet-popup-content {
+            margin: 0;
+            min-width: 380px;
+            max-width: 450px;
+        }
+        
+        .damage-popup {
+            padding: 0;
+        }
+        
+        .popup-header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 18px 20px;
+            border-radius: 12px 12px 0 0;
+        }
+        
+        .popup-damage-type {
+            font-size: 24px;
+            font-weight: bold;
+            margin-bottom: 6px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        
+        .popup-meta {
+            font-size: 13px;
+            opacity: 0.95;
+            display: flex;
+            gap: 15px;
+        }
+        
+        .popup-body {
+            padding: 20px;
+        }
+        
+        /* Image Gallery */
+        .gallery-container {
+            margin-bottom: 18px;
+        }
+        
+        .gallery-main {
+            position: relative;
+            width: 100%;
+            height: 280px;
+            background: #000;
+            border-radius: 10px;
+            overflow: hidden;
+            margin-bottom: 12px;
+        }
+        
+        .gallery-main img {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+            display: none;
+        }
+        
+        .gallery-main img.active {
+            display: block;
+        }
+        
+        .gallery-counter {
+            position: absolute;
+            top: 12px;
+            right: 12px;
+            background: rgba(0,0,0,0.8);
+            color: white;
+            padding: 6px 14px;
+            border-radius: 20px;
+            font-size: 13px;
+            font-weight: bold;
+            backdrop-filter: blur(5px);
+        }
+        
+        .gallery-nav {
+            position: absolute;
+            top: 50%;
+            transform: translateY(-50%);
+            background: rgba(0,0,0,0.7);
+            color: white;
+            border: none;
+            padding: 15px 12px;
+            cursor: pointer;
+            font-size: 24px;
+            transition: all 0.3s;
+            backdrop-filter: blur(5px);
+            z-index: 10;
+        }
+        
+        .gallery-nav:hover {
+            background: rgba(0,0,0,0.9);
+            transform: translateY(-50%) scale(1.1);
+        }
+        
+        .gallery-nav.prev {
+            left: 0;
+            border-radius: 0 8px 8px 0;
+        }
+        
+        .gallery-nav.next {
+            right: 0;
+            border-radius: 8px 0 0 8px;
+        }
+        
+        .gallery-thumbnails {
+            display: flex;
+            gap: 8px;
+            overflow-x: auto;
+            padding: 4px;
+        }
+        
+        .gallery-thumbnails::-webkit-scrollbar {
+            height: 6px;
+        }
+        
+        .gallery-thumbnails::-webkit-scrollbar-track {
+            background: #f1f1f1;
+            border-radius: 3px;
+        }
+        
+        .gallery-thumbnails::-webkit-scrollbar-thumb {
+            background: #888;
+            border-radius: 3px;
+        }
+        
+        .thumbnail {
+            width: 70px;
+            height: 50px;
+            object-fit: cover;
+            border-radius: 6px;
+            cursor: pointer;
+            border: 3px solid transparent;
+            transition: all 0.3s;
+            flex-shrink: 0;
+        }
+        
+        .thumbnail:hover {
+            border-color: #3498db;
+            transform: scale(1.05);
+        }
+        
+        .thumbnail.active {
+            border-color: #667eea;
+            box-shadow: 0 0 12px rgba(102, 126, 234, 0.5);
+        }
+        
+        .image-info {
+            background: #f8f9fa;
+            padding: 10px 14px;
+            border-radius: 8px;
+            font-size: 12px;
+            color: #666;
+            margin-top: 10px;
+        }
+        
+        .image-info-row {
+            display: flex;
+            justify-content: space-between;
+            margin: 4px 0;
+        }
+        
+        /* Damage Details */
+        .damage-details {
+            margin-top: 18px;
+        }
+        
+        .detail-row {
+            display: flex;
+            justify-content: space-between;
+            padding: 10px 0;
+            border-bottom: 1px solid #eee;
+        }
+        
+        .detail-label {
+            color: #7f8c8d;
+            font-weight: 600;
+            font-size: 13px;
+        }
+        
+        .detail-value {
+            color: #2c3e50;
+            font-weight: 500;
+            font-size: 13px;
+            text-align: right;
+        }
+        
+        .severity-badge {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: bold;
+            text-transform: uppercase;
+        }
+        
+        .severity-badge.high {
+            background: #e74c3c;
+            color: white;
+        }
+        
+        .severity-badge.medium {
+            background: #f39c12;
+            color: white;
+        }
+        
+        .severity-badge.low {
+            background: #f1c40f;
+            color: #333;
+        }
+        
+        .confidence-bar {
+            width: 100%;
+            height: 8px;
+            background: #eee;
+            border-radius: 4px;
+            overflow: hidden;
+        }
+        
+        .confidence-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #27ae60, #2ecc71);
+            border-radius: 4px;
+            transition: width 0.5s ease;
+        }
+        
+        /* Loading */
+        .loading {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(255,255,255,0.98);
+            padding: 40px 60px;
+            border-radius: 16px;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+            z-index: 2000;
+            text-align: center;
+        }
+        
+        .loading-spinner {
+            border: 5px solid #f3f3f3;
+            border-top: 5px solid #3498db;
+            border-radius: 50%;
+            width: 50px;
+            height: 50px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 20px;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
+        .loading-text {
+            color: #2c3e50;
+            font-weight: 600;
+            font-size: 16px;
+        }
+        
+        /* File Upload */
+        .upload-area {
+            margin-top: 15px;
+            padding: 15px;
+            border: 2px dashed #3498db;
+            border-radius: 8px;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.3s;
+            background: #f8f9fa;
+        }
+        
+        .upload-area:hover {
+            background: #e3f2fd;
+            border-color: #2980b9;
+        }
+        
+        .upload-area input {
+            display: none;
+        }
+        
+        .upload-text {
+            color: #3498db;
+            font-weight: 600;
+            font-size: 14px;
+        }
+        
+        /* Responsive */
+        @media (max-width: 768px) {
+            .info-panel {
+                max-width: calc(100% - 40px);
+                padding: 18px;
+            }
+            
+            .leaflet-popup-content {
+                min-width: 280px;
+            }
+            
+            .gallery-main {
+                height: 200px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div id="map"></div>
+    
+    <!-- Info Panel -->
+    <div class="info-panel">
+        <h2>📊 Statistik</h2>
+        <div class="stat">
+            <span class="stat-label">Schadens-Gruppen:</span>
+            <span class="stat-value" id="total-groups">0</span>
+        </div>
+        <div class="stat">
+            <span class="stat-label">Gesamt-Bilder:</span>
+            <span class="stat-value" id="total-images">0</span>
+        </div>
+        <div class="stat">
+            <span class="stat-label">Ø Confidence:</span>
+            <span class="stat-value" id="avg-confidence">0%</span>
+        </div>
+        
+        <div class="damage-type-stats">
+            <div class="damage-badge">
+                <div class="damage-badge-type">🕳️ Schlaglöcher</div>
+                <div class="damage-badge-count" id="potholes">0</div>
+            </div>
+            <div class="damage-badge">
+                <div class="damage-badge-type">⚡ Risse</div>
+                <div class="damage-badge-count" id="cracks">0</div>
+            </div>
+            <div class="damage-badge">
+                <div class="damage-badge-type">🔧 Flickstellen</div>
+                <div class="damage-badge-count" id="patches">0</div>
+            </div>
+            <div class="damage-badge">
+                <div class="damage-badge-type">⛰️ Bodenwellen</div>
+                <div class="damage-badge-count" id="bumps">0</div>
+            </div>
+        </div>
+        
+        <div class="upload-area" onclick="document.getElementById('file-input').click()">
+            <input type="file" id="file-input" accept=".geojson,.json" onchange="loadFile(event)">
+            <div class="upload-text">📁 GeoJSON-Datei laden</div>
+        </div>
+    </div>
+    
+    <!-- Legend -->
+    <div class="legend">
+        <h3>🎨 Schweregrad</h3>
+        <div class="legend-item">
+            <div class="legend-color severity-high"></div>
+            <span>Hoch (Sofortmaßnahme erforderlich)</span>
+        </div>
+        <div class="legend-item">
+            <div class="legend-color severity-medium"></div>
+            <span>Mittel (Beobachten & Planen)</span>
+        </div>
+        <div class="legend-item">
+            <div class="legend-color severity-low"></div>
+            <span>Niedrig (Vorbeugende Wartung)</span>
+        </div>
+    </div>
+    
+    <!-- Loading -->
+    <div class="loading" id="loading">
+        <div class="loading-spinner"></div>
+        <div class="loading-text">Lade Daten...</div>
+    </div>
+
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script>
+        // Initialize map
+        const map = L.map('map').setView([48.275, 11.093], 15);
+        
+        // Add OpenStreetMap tiles
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            attribution: '© OpenStreetMap | Bike Surface AI',
+            maxZoom: 19
+        }).addTo(map);
+        
+        // Statistics
+        let stats = {
+            totalGroups: 0,
+            totalImages: 0,
+            totalConfidence: 0,
+            pothole: 0,
+            crack: 0,
+            patch: 0,
+            bump: 0
+        };
+        
+        // Current gallery state
+        let currentGallery = null;
+        
+        // Load data from file
+        function loadFile(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+            
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                try {
+                    const geojson = JSON.parse(e.target.result);
+                    loadGeoJSON(geojson);
+                } catch (error) {
+                    alert('Fehler beim Laden der Datei: ' + error.message);
+                }
+            };
+            reader.readAsText(file);
+        }
+        
+        // Load GeoJSON data
+        function loadGeoJSON(geojson) {
+            // Clear existing markers
+            map.eachLayer(layer => {
+                if (layer instanceof L.Marker) {
+                    map.removeLayer(layer);
+                }
+            });
+            
+            // Reset statistics
+            stats = {
+                totalGroups: 0,
+                totalImages: 0,
+                totalConfidence: 0,
+                pothole: 0,
+                crack: 0,
+                patch: 0,
+                bump: 0
+            };
+            
+            // Process features
+            geojson.features.forEach(feature => {
+                const props = feature.properties;
+                const coords = feature.geometry.coordinates;
+                
+                // Update statistics
+                stats.totalGroups++;
+                stats.totalImages += props.image_count;
+                stats.totalConfidence += props.avg_confidence;
+                
+                const damageType = props.damage_type.toLowerCase();
+                if (stats[damageType] !== undefined) {
+                    stats[damageType]++;
+                }
+                
+                // Create marker
+                const severity = props.severity || 'low';
+                const markerSize = props.image_count > 1 ? 28 : 22;
+                
+                const icon = L.divIcon({
+                    className: `damage-marker severity-${severity}`,
+                    iconSize: [markerSize, markerSize],
+                    html: props.image_count > 1 ? `<div style="color:white;font-weight:bold;font-size:12px;text-align:center;line-height:${markerSize}px;">${props.image_count}</div>` : ''
+                });
+                
+                const marker = L.marker([coords[1], coords[0]], { icon })
+                    .addTo(map);
+                
+                // Create popup with gallery
+                const popup = createPopupWithGallery(props, feature);
+                marker.bindPopup(popup, {
+                    maxWidth: 500,
+                    className: 'damage-popup-wrapper'
+                });
+                
+                // Open gallery on popup open
+                marker.on('popupopen', function(e) {
+                    initGallery(props.id);
+                });
+            });
+            
+            // Update statistics display
+            updateStats();
+            
+            // Fit map to markers
+            if (geojson.features.length > 0) {
+                const bounds = L.geoJSON(geojson).getBounds();
+                map.fitBounds(bounds, { padding: [80, 80] });
+            }
+            
+            // Hide loading
+            document.getElementById('loading').style.display = 'none';
+        }
+        
+        function createPopupWithGallery(props, feature) {
+            const images = props.images || [];
+            const damageTypeGerman = getDamageTypeGerman(props.damage_type);
+            const severityGerman = getSeverityGerman(props.severity);
+            const confidence = (props.best_confidence * 100).toFixed(1);
+            
+            // Build image gallery HTML
+            let galleryHTML = '';
+            if (images.length > 0) {
+                galleryHTML = `
+                    <div class="gallery-container">
+                        <div class="gallery-main" id="gallery-${props.id}">
+                            <div class="gallery-counter">
+                                <span id="gallery-counter-${props.id}">1</span> / ${images.length}
+                            </div>
+                            ${images.length > 1 ? `
+                                <button class="gallery-nav prev" onclick="prevImage(${props.id})">‹</button>
+                                <button class="gallery-nav next" onclick="nextImage(${props.id})">›</button>
+                            ` : ''}
+                            ${images.map((img, idx) => `
+                                <img src="${getImagePath(img.filename, feature)}" 
+                                     class="${idx === 0 ? 'active' : ''}" 
+                                     data-index="${idx}"
+                                     alt="Bild ${idx + 1}">
+                            `).join('')}
+                        </div>
+                        ${images.length > 1 ? `
+                            <div class="gallery-thumbnails" id="thumbnails-${props.id}">
+                                ${images.map((img, idx) => `
+                                    <img src="${getImagePath(img.filename, feature)}" 
+                                         class="thumbnail ${idx === 0 ? 'active' : ''}" 
+                                         onclick="showImage(${props.id}, ${idx})"
+                                         alt="Thumbnail ${idx + 1}">
+                                `).join('')}
+                            </div>
+                        ` : ''}
+                        <div class="image-info" id="image-info-${props.id}">
+                            <div class="image-info-row">
+                                <span>Zeitstempel:</span>
+                                <span>${new Date(images[0].timestamp).toLocaleString('de-DE')}</span>
+                            </div>
+                            <div class="image-info-row">
+                                <span>Confidence:</span>
+                                <span>${(images[0].confidence * 100).toFixed(1)}%</span>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }
+            
+            return `
+                <div class="damage-popup">
+                    <div class="popup-header">
+                        <div class="popup-damage-type">${damageTypeGerman}</div>
+                        <div class="popup-meta">
+                            <span>📸 ${props.image_count} ${props.image_count === 1 ? 'Bild' : 'Bilder'}</span>
+                            <span>🎯 ${confidence}%</span>
+                            <span>⚠️ ${severityGerman}</span>
+                        </div>
+                    </div>
+                    <div class="popup-body">
+                        ${galleryHTML}
+                        <div class="damage-details">
+                            <div class="detail-row">
+                                <span class="detail-label">Schweregrad:</span>
+                                <span class="detail-value">
+                                    <span class="severity-badge ${props.severity}">${severityGerman}</span>
+                                </span>
+                            </div>
+                            <div class="detail-row">
+                                <span class="detail-label">Beste Confidence:</span>
+                                <span class="detail-value">
+                                    <div class="confidence-bar">
+                                        <div class="confidence-fill" style="width: ${confidence}%"></div>
+                                    </div>
+                                    ${confidence}%
+                                </span>
+                            </div>
+                            <div class="detail-row">
+                                <span class="detail-label">Durchschn. Confidence:</span>
+                                <span class="detail-value">${(props.avg_confidence * 100).toFixed(1)}%</span>
+                            </div>
+                            <div class="detail-row">
+                                <span class="detail-label">Koordinaten:</span>
+                                <span class="detail-value">${feature.geometry.coordinates[1].toFixed(6)}, ${feature.geometry.coordinates[0].toFixed(6)}</span>
+                            </div>
+                            <div class="detail-row">
+                                <span class="detail-label">Erstmalig gesehen:</span>
+                                <span class="detail-value">${new Date(props.first_seen).toLocaleString('de-DE')}</span>
+                            </div>
+                            ${props.image_count > 1 ? `
+                                <div class="detail-row">
+                                    <span class="detail-label">Letztmalig gesehen:</span>
+                                    <span class="detail-value">${new Date(props.last_seen).toLocaleString('de-DE')}</span>
+                                </div>
+                            ` : ''}
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+        
+        function getImagePath(filename, feature) {
+            // Try to construct path relative to GeoJSON location
+            // For now, return placeholder or try relative path
+            const sessionMatch = filename.match(/detection_(\d+)/);
+            if (sessionMatch) {
+                // Assume images are in same directory structure
+                return `images/${filename}`;
+            }
+            return `data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' width='400' height='300'><rect fill='%23ddd' width='400' height='300'/><text x='50%' y='50%' text-anchor='middle' fill='%23999' font-size='20'>Bild nicht gefunden</text></svg>`;
+        }
+        
+        function initGallery(groupId) {
+            currentGallery = {
+                id: groupId,
+                currentIndex: 0
+            };
+        }
+        
+        function showImage(groupId, index) {
+            const gallery = document.getElementById(`gallery-${groupId}`);
+            const images = gallery.querySelectorAll('img');
+            const thumbnails = document.getElementById(`thumbnails-${groupId}`)?.querySelectorAll('.thumbnail');
+            const counter = document.getElementById(`gallery-counter-${groupId}`);
+            const imageInfo = document.getElementById(`image-info-${groupId}`);
+            
+            // Update active image
+            images.forEach((img, idx) => {
+                img.classList.toggle('active', idx === index);
+            });
+            
+            // Update active thumbnail
+            if (thumbnails) {
+                thumbnails.forEach((thumb, idx) => {
+                    thumb.classList.toggle('active', idx === index);
+                });
+            }
+            
+            // Update counter
+            if (counter) {
+                counter.textContent = index + 1;
+            }
+            
+            // Update image info
+            if (imageInfo && images[index]) {
+                const imgData = images[index];
+                const timestamp = imgData.getAttribute('data-timestamp') || new Date().toISOString();
+                const confidence = imgData.getAttribute('data-confidence') || '0';
+                
+                imageInfo.innerHTML = `
+                    <div class="image-info-row">
+                        <span>Bild:</span>
+                        <span>${index + 1} von ${images.length}</span>
+                    </div>
+                    <div class="image-info-row">
+                        <span>Zeitstempel:</span>
+                        <span>${new Date(timestamp).toLocaleString('de-DE')}</span>
+                    </div>
+                    <div class="image-info-row">
+                        <span>Confidence:</span>
+                        <span>${(parseFloat(confidence) * 100).toFixed(1)}%</span>
+                    </div>
+                `;
+            }
+            
+            currentGallery.currentIndex = index;
+        }
+        
+        function nextImage(groupId) {
+            const gallery = document.getElementById(`gallery-${groupId}`);
+            const images = gallery.querySelectorAll('img');
+            const current = currentGallery.currentIndex;
+            const next = (current + 1) % images.length;
+            showImage(groupId, next);
+        }
+        
+        function prevImage(groupId) {
+            const gallery = document.getElementById(`gallery-${groupId}`);
+            const images = gallery.querySelectorAll('img');
+            const current = currentGallery.currentIndex;
+            const prev = (current - 1 + images.length) % images.length;
+            showImage(groupId, prev);
+        }
+        
+        function getDamageTypeGerman(type) {
+            const translations = {
+                'pothole': '🕳️ Schlagloch',
+                'crack': '⚡ Riss',
+                'patch': '🔧 Flickstelle',
+                'bump': '⛰️ Bodenwelle'
+            };
+            return translations[type.toLowerCase()] || type;
+        }
+        
+        function getSeverityGerman(severity) {
+            const translations = {
+                'high': '🔴 Hoch',
+                'medium': '🟡 Mittel',
+                'low': '🟢 Niedrig'
+            };
+            return translations[severity] || severity;
+        }
+        
+        function updateStats() {
+            document.getElementById('total-groups').textContent = stats.totalGroups;
+            document.getElementById('total-images').textContent = stats.totalImages;
+            document.getElementById('avg-confidence').textContent = 
+                stats.totalGroups > 0 
+                    ? ((stats.totalConfidence / stats.totalGroups) * 100).toFixed(1) + '%'
+                    : '0%';
+            
+            document.getElementById('potholes').textContent = stats.pothole;
+            document.getElementById('cracks').textContent = stats.crack;
+            document.getElementById('patches').textContent = stats.patch;
+            document.getElementById('bumps').textContent = stats.bump;
+        }
+        
+        // Try to load default data on startup
+        async function loadDefaultData() {
+            try {
+                // Try to load damages_grouped.geojson from current directory
+                const response = await fetch('damages_grouped.geojson');
+                if (response.ok) {
+                    const geojson = await response.json();
+                    loadGeoJSON(geojson);
+                } else {
+                    // Show file upload instruction
+                    document.getElementById('loading').innerHTML = `
+                        <div style="text-align: center;">
+                            <div style="font-size: 48px; margin-bottom: 20px;">📁</div>
+                            <div style="color: #2c3e50; font-size: 18px; font-weight: 600; margin-bottom: 10px;">
+                                Keine Daten gefunden
+                            </div>
+                            <div style="color: #7f8c8d; font-size: 14px;">
+                                Bitte laden Sie eine GeoJSON-Datei über das Panel rechts
+                            </div>
+                        </div>
+                    `;
+                }
+            } catch (error) {
+                console.log('No default data found, waiting for file upload');
+                document.getElementById('loading').innerHTML = `
+                    <div style="text-align: center;">
+                        <div style="font-size: 48px; margin-bottom: 20px;">📁</div>
+                        <div style="color: #2c3e50; font-size: 18px; font-weight: 600; margin-bottom: 10px;">
+                            Willkommen bei Bike Surface AI
+                        </div>
+                        <div style="color: #7f8c8d; font-size: 14px;">
+                            Laden Sie eine damages_grouped.geojson Datei<br>über das Panel rechts oben
+                        </div>
+                    </div>
+                `;
+            }
+        }
+        
+        // Initialize
+        loadDefaultData();
+        
+        // Keyboard navigation
+        document.addEventListener('keydown', function(e) {
+            if (!currentGallery) return;
+            
+            if (e.key === 'ArrowRight') {
+                nextImage(currentGallery.id);
+            } else if (e.key === 'ArrowLeft') {
+                prevImage(currentGallery.id);
+            }
+        });
+    </script>
+</body>
+</html>

@@ -35,7 +35,11 @@ state = {
 # Auto live system process (when started from web UI)
 auto_process = None
 auto_lock = threading.Lock()
-demo_mode = True
+demo_mode = False  # Start in production mode by default
+
+# Global GPS module to maintain satellite count cache
+gps_module = None
+gps_last_position = None
 
 
 @app.route('/')
@@ -352,7 +356,7 @@ def live_status():
             'damages': {},
             'duration_seconds': 0
         },
-        'current_position': None,  # No position when not running
+        'current_position': None,  # Will be filled with GPS data if available
         'current_surface': None,
         'recent_damages': [],
         'route_points': []
@@ -360,6 +364,17 @@ def live_status():
     
     # Respect demo_mode flag if no live_state.json
     demo_state['demo_mode'] = demo_mode
+    
+    # If in production mode (not demo), try to get current GPS position
+    if not demo_mode:
+        global gps_module, gps_last_position
+        if gps_module:
+            position = gps_module.get_current_position()
+            if position and position.get('latitude') and position.get('latitude') != 0:
+                demo_state['current_position'] = [position['latitude'], position['longitude']]
+            elif gps_last_position:
+                demo_state['current_position'] = [gps_last_position['latitude'], gps_last_position['longitude']]
+    
     return jsonify(demo_state)
 
 
@@ -400,6 +415,16 @@ def live_stop():
                 auto_process.wait()
             pid = auto_process.pid
             auto_process = None
+            
+            # Clean up live_state.json after stopping
+            live_state_file = Path(__file__).parent / 'live_state.json'
+            if live_state_file.exists():
+                try:
+                    live_state_file.unlink()
+                    print("live_state.json gelöscht nach Stop")
+                except Exception as e:
+                    print(f"Fehler beim Löschen von live_state.json: {e}")
+            
             return jsonify({'status': 'stopped', 'pid': pid})
         except Exception as e:
             return jsonify({'error': str(e)}), 500
@@ -457,6 +482,154 @@ def gps_current():
             'longitude': None,
             'fix': False,
             'error': str(e)
+        })
+
+
+@app.route('/api/hardware/status')
+def hardware_status():
+    """Get hardware status for GPS and Camera"""
+    global gps_module, gps_last_position
+    
+    status = {
+        'gps': {
+            'connected': False,
+            'latitude': None,
+            'longitude': None,
+            'satellites': 0
+        },
+        'camera': {
+            'available': False,
+            'busy': False
+        }
+    }
+    
+    # Check GPS - use persistent GPS module to maintain satellite count cache
+    try:
+        from gps_module import GPSModule
+        
+        # Initialize GPS module if not exists
+        if gps_module is None:
+            gps_config = {
+                'port': '/dev/ttyACM0',
+                'baudrate': 9600,
+                'timeout': 1.0
+            }
+            gps_module = GPSModule(gps_config)
+        
+        # Try to get position - may need multiple attempts to get fresh data
+        position = None
+        for attempt in range(3):
+            position = gps_module.get_current_position()
+            if position and position.get('latitude') is not None and position.get('latitude') != 0:
+                break
+        
+        if position and position.get('latitude') is not None and position.get('latitude') != 0:
+            status['gps']['connected'] = True
+            status['gps']['latitude'] = position['latitude']
+            status['gps']['longitude'] = position['longitude']
+            # Ensure satellites is always an integer
+            try:
+                status['gps']['satellites'] = int(position.get('satellites', 0))
+            except (ValueError, TypeError):
+                status['gps']['satellites'] = 0
+            # Cache last valid position
+            gps_last_position = {
+                'latitude': status['gps']['latitude'],
+                'longitude': status['gps']['longitude'],
+                'satellites': status['gps']['satellites']
+            }
+        elif position and position.get('satellites', 0) > 0:
+            # GPS module connected but no fix yet
+            status['gps']['connected'] = True
+            try:
+                status['gps']['satellites'] = int(position.get('satellites', 0))
+            except (ValueError, TypeError):
+                status['gps']['satellites'] = 0
+        else:
+            # No GPS data at all - but use cached position if available
+            if gps_last_position:
+                status['gps']['connected'] = True
+                status['gps']['latitude'] = gps_last_position['latitude']
+                status['gps']['longitude'] = gps_last_position['longitude']
+                status['gps']['satellites'] = gps_last_position['satellites']
+            else:
+                status['gps']['connected'] = False
+    except Exception as e:
+        print(f"GPS check error: {e}")
+        # Use cached position if available
+        if gps_last_position:
+            status['gps']['connected'] = True
+            status['gps']['latitude'] = gps_last_position['latitude']
+            status['gps']['longitude'] = gps_last_position['longitude']
+            status['gps']['satellites'] = gps_last_position['satellites']
+        else:
+            status['gps']['connected'] = False
+    
+    # Check Camera
+    # First check if camera is already in use by our processes
+    camera_in_use = False
+    if state.get('is_running'):
+        camera_in_use = True
+    
+    with auto_lock:
+        if auto_process and auto_process.poll() is None:
+            camera_in_use = True
+    
+    if camera_in_use:
+        status['camera']['available'] = True
+        status['camera']['busy'] = True
+        status['camera']['device'] = '/dev/video0'
+    else:
+        # Check for video devices and get info
+        try:
+            import os
+            import subprocess
+            
+            # Check which video devices exist
+            video_devices = []
+            for i in range(4):
+                device = f'/dev/video{i}'
+                if os.path.exists(device):
+                    video_devices.append(device)
+            
+            if video_devices:
+                status['camera']['available'] = True
+                status['camera']['busy'] = False
+                status['camera']['device'] = video_devices[0]
+                
+                # Try to get camera name
+                try:
+                    result = subprocess.run(['v4l2-ctl', '--device', video_devices[0], '--info'], 
+                                          capture_output=True, text=True, timeout=2)
+                    if result.returncode == 0:
+                        for line in result.stdout.split('\n'):
+                            if 'Card type' in line:
+                                status['camera']['name'] = line.split(':')[1].strip()
+                                break
+                except:
+                    pass
+            else:
+                status['camera']['available'] = False
+        except Exception as e:
+            print(f"Camera check error: {e}")
+            status['camera']['available'] = False
+    
+    return jsonify(status)
+
+
+@app.route('/api/gps/last_known')
+def gps_last_known():
+    """Get last known GPS position (for map centering)"""
+    global gps_last_position
+    
+    if gps_last_position:
+        return jsonify(gps_last_position)
+    else:
+        # Default to Ried bei Mering
+        return jsonify({
+            'latitude': 48.2904,
+            'longitude': 11.0434,
+            'satellites': 0
         })
 
 

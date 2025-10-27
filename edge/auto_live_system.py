@@ -171,8 +171,14 @@ class AutoLiveSystem:
         gps_config = self.config['gps']
         
         try:
-            self.gps = GPSModule(gps_config['port'], gps_config['baudrate'])
-            self.gps.start()
+            # GPSModule expects a config dict
+            gps_module_config = {
+                'port': gps_config['port'],
+                'baudrate': gps_config['baudrate'],
+                'timeout': gps_config.get('timeout', 1.0)
+            }
+            self.gps = GPSModule(gps_module_config)
+            # GPSModule starts reading automatically in constructor
             
             # Wait for GPS fix
             self.logger.info("⏳ Warte auf GPS-Fix...")
@@ -180,7 +186,7 @@ class AutoLiveSystem:
             start = time.time()
             
             while time.time() - start < max_wait:
-                data = self.gps.get_latest_data()
+                data = self.gps.get_current_position()
                 if data and data.get('latitude') and data.get('satellites', 0) >= gps_config['min_satellites']:
                     self.logger.info(f"✅ GPS-Fix: {data['satellites']} Satelliten")
                     self.logger.info(f"📍 Position: {data['latitude']:.6f}, {data['longitude']:.6f}")
@@ -288,10 +294,10 @@ class AutoLiveSystem:
     def get_gps_position(self) -> Optional[Tuple[float, float]]:
         """Get current GPS position"""
         if not self.gps:
-            # Demo position (München)
-            return (48.137154, 11.576124)
+            # Demo position (Ried bei Mering, 86510 Aichach-Friedberg)
+            return (48.2904, 11.0434)
         
-        data = self.gps.get_latest_data()
+        data = self.gps.get_current_position()
         if data and data.get('latitude') and data.get('longitude'):
             return (data['latitude'], data['longitude'])
         
@@ -612,8 +618,12 @@ class AutoLiveSystem:
                 return
         
         if not self.init_camera():
-            self.logger.error("❌ Kamera erforderlich - Abbruch")
-            return
+            # Camera is required unless in demo mode
+            if not self.config['model'].get('demo_mode', False):
+                self.logger.error("❌ Kamera erforderlich - Abbruch")
+                return
+            else:
+                self.logger.warning("⚠️  Fahre fort ohne Kamera (Demo-Modus)")
         
         if not self.init_model():
             self.logger.error("❌ Modell-Initialisierung fehlgeschlagen - Abbruch")

@@ -28,6 +28,7 @@ class GPSModule:
         self.timeout = config.get('timeout', 5)
         self.serial_connection = None
         self.last_valid_position = None
+        self.last_satellite_count = 0  # Cache last known satellite count
         self.connect()
     
     def connect(self):
@@ -69,13 +70,23 @@ class GPSModule:
                     # Parse GGA sentence (contains position and altitude)
                     if isinstance(msg, pynmea2.types.talker.GGA):
                         if msg.gps_qual > 0:  # Valid GPS fix
+                            # Ensure satellites is always an integer
+                            try:
+                                num_sats = int(msg.num_sats) if msg.num_sats else 0
+                            except (ValueError, TypeError):
+                                num_sats = 0
+                            
+                            # Cache satellite count for later use
+                            if num_sats > 0:
+                                self.last_satellite_count = num_sats
+                            
                             position = {
                                 'latitude': msg.latitude,
                                 'longitude': msg.longitude,
                                 'altitude': msg.altitude if msg.altitude else 0.0,
                                 'speed': 0.0,  # GGA doesn't have speed
                                 'timestamp': datetime.utcnow().isoformat(),
-                                'satellites': msg.num_sats,
+                                'satellites': num_sats,
                                 'fix_quality': msg.gps_qual
                             }
                             self.last_valid_position = position
@@ -84,13 +95,14 @@ class GPSModule:
                     # Parse RMC sentence (contains position and speed)
                     elif isinstance(msg, pynmea2.types.talker.RMC):
                         if msg.status == 'A':  # Active/Valid
+                            # RMC doesn't have satellite count, use cached value
                             position = {
                                 'latitude': msg.latitude,
                                 'longitude': msg.longitude,
                                 'altitude': 0.0,  # RMC doesn't have altitude
                                 'speed': msg.spd_over_grnd if msg.spd_over_grnd else 0.0,
                                 'timestamp': datetime.utcnow().isoformat(),
-                                'satellites': 0,
+                                'satellites': self.last_satellite_count,  # Use cached value
                                 'fix_quality': 1
                             }
                             self.last_valid_position = position

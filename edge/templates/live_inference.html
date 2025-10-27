@@ -81,6 +81,15 @@
 
         .status-running { background: #27ae60; }
         .status-stopped { background: #95a5a6; }
+        .status-busy { 
+            background: #f39c12;
+            animation: pulse 1.5s ease-in-out infinite;
+        }
+        
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.6; }
+        }
 
         /* Demo Toggle */
         .demo-toggle {
@@ -168,30 +177,63 @@
         .stat-card h3 {
             color: #667eea;
             margin-bottom: 10px;
-            font-size: 1.1em;
+            font-size: 1em;
         }
         
         .stat-row {
             display: flex;
             justify-content: space-between;
             padding: 8px 0;
-            border-bottom: 1px solid #4c4c4c;
+            border-bottom: 1px solid #4a4a4a;
         }
         
-        .stat-row:last-child {
-            border-bottom: none;
-        }
+        .stat-row:last-child { border-bottom: none; }
         
         .stat-label {
             color: #999;
+            font-size: 0.9em;
         }
         
         .stat-value {
             color: #fff;
             font-weight: bold;
+            font-size: 0.95em;
         }
         
-        .surface-badge, .damage-badge {
+        /* Status Dots */
+        .status-dot {
+            display: inline-block;
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            margin-right: 6px;
+            animation: pulse 2s infinite;
+        }
+        
+        .status-connected {
+            background: #27ae60;
+            box-shadow: 0 0 5px #27ae60;
+        }
+        
+        .status-disconnected {
+            background: #e74c3c;
+            box-shadow: 0 0 5px #e74c3c;
+        }
+        
+        .status-busy {
+            background: #f39c12;
+            box-shadow: 0 0 5px #f39c12;
+        }
+        
+        .status-unknown {
+            background: #95a5a6;
+            box-shadow: 0 0 5px #95a5a6;
+        }
+        
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }        .surface-badge, .damage-badge {
             display: inline-block;
             padding: 4px 10px;
             border-radius: 12px;
@@ -369,6 +411,44 @@
             
             <!-- Sidebar -->
             <div class="sidebar">
+                <!-- System Status -->
+                <div class="stat-card">
+                    <h3>⚡ System Status</h3>
+                    <div class="stat-row">
+                        <span class="stat-label">Modus:</span>
+                        <span class="stat-value" id="system-mode">Demo</span>
+                    </div>
+                    <div class="stat-row">
+                        <span class="stat-label">Aufnahme:</span>
+                        <span class="stat-value" id="recording-status">
+                            <span class="status-dot status-disconnected"></span> Inaktiv
+                        </span>
+                    </div>
+                </div>
+                
+                <!-- Hardware Status -->
+                <div class="stat-card">
+                    <h3>🔧 Hardware</h3>
+                    <div class="stat-row">
+                        <span class="stat-label">GPS:</span>
+                        <span class="stat-value" id="gps-status">
+                            <span class="status-dot status-unknown"></span> Prüfe...
+                        </span>
+                    </div>
+                    <div class="stat-row" id="gps-coords-row" style="display: none; font-size: 0.85em; color: #666; margin-top: -5px; padding-left: 10px;">
+                        <span id="gps-coords">-</span>
+                    </div>
+                    <div class="stat-row">
+                        <span class="stat-label">Kamera:</span>
+                        <span class="stat-value" id="camera-status">
+                            <span class="status-dot status-unknown"></span> Prüfe...
+                        </span>
+                    </div>
+                    <div class="stat-row" id="camera-info-row" style="display: none; font-size: 0.85em; color: #666; margin-top: -5px; padding-left: 10px;">
+                        <span id="camera-info">-</span>
+                    </div>
+                </div>
+                
                 <!-- Statistics -->
                 <div class="stat-card">
                     <h3>📊 Statistik</h3>
@@ -420,7 +500,8 @@
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script>
         // Initialize map - Start with Ried bei Mering (86510 Aichach-Friedberg)
-        const map = L.map('map').setView([48.2904, 11.0434], 15);
+        // Zoom 13 for better overview
+        const map = L.map('map').setView([48.2904, 11.0434], 13);
         
         L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
             attribution: '© OpenStreetMap contributors',
@@ -429,12 +510,15 @@
         
         // Layers
         let routeLayer = L.layerGroup().addTo(map);
+        let routePolyline = null;  // For storing the route line
         let currentMarker = null;
-        const damageMarkers = [];
+        let damageMarkers = [];
         
         // State
         let isDemoMode = false;
         let demoData = null;
+        let hasStartedSession = false;  // Track if a session was ever started (for initial centering)
+        let isStarting = false;  // Track if system is being started
         
         // Update interval
         const UPDATE_INTERVAL = 2000; // 2 seconds
@@ -529,76 +613,98 @@
             isDemoMode = !isDemoMode;
             const demoToggle = document.getElementById('demo-toggle');
             const statusBadge = document.getElementById('status-badge');
+            const systemModeEl = document.getElementById('system-mode');
+            const btnStart = document.getElementById('btn-start');
+            const btnStop = document.getElementById('btn-stop');
+            const recordingStatus = document.getElementById('recording-status');
+            
+            // Toggle demo mode on server first
+            await fetch('/api/live/demo', { 
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ demo: isDemoMode })
+            });
             
             // Update toggle switch appearance
             if (isDemoMode) {
                 demoToggle.classList.add('active');
                 statusBadge.textContent = 'Demo';
                 statusBadge.className = 'status-badge status-demo';
+                systemModeEl.textContent = 'Demo';
                 if (!demoData) generateDemoData();
                 
                 // Disable start/stop buttons in demo mode
-                document.getElementById('btn-start').disabled = true;
-                document.getElementById('btn-stop').disabled = true;
+                btnStart.disabled = true;
+                btnStop.disabled = true;
+                
+                // Reset recording status
+                recordingStatus.innerHTML = '<span class="status-dot status-disconnected"></span> Inaktiv';
                 
                 updateUI(); // Show demo data immediately
             } else {
                 demoToggle.classList.remove('active');
                 statusBadge.textContent = 'Bereit';
                 statusBadge.className = 'status-badge status-ready';
+                systemModeEl.textContent = 'Produktiv';
                 
-                // Clear all map layers
-                routeLayer.clearLayers();
-                damageMarkers.forEach(m => map.removeLayer(m));
-                damageMarkers.length = 0;
+                // IMPORTANT: Set correct button states for non-running system
+                btnStart.disabled = false;
+                btnStop.disabled = true;
                 
-                if (currentMarker) {
-                    map.removeLayer(currentMarker);
-                    currentMarker = null;
+                // Reset recording status
+                recordingStatus.innerHTML = '<span class="status-dot status-disconnected"></span> Inaktiv';
+                
+                // Clear map and reset stats
+                if (routePolyline) {
+                    map.removeLayer(routePolyline);
+                    routePolyline = null;
                 }
+                damageMarkers.forEach(marker => map.removeLayer(marker));
+                damageMarkers = [];
                 
-                // Reset statistics to zero
-                document.getElementById('session-id').textContent = '-';
-                document.getElementById('runtime').textContent = '00:00:00';
                 document.getElementById('stat-images').textContent = '0';
                 document.getElementById('stat-distance').textContent = '0.00 km';
                 document.getElementById('stat-speed').textContent = '0.0 km/h';
-                document.getElementById('current-surface').innerHTML = '';
-                document.getElementById('surface-list').innerHTML = '<div style="color: #999; text-align: center;">Noch keine Daten</div>';
+                document.getElementById('session-id').textContent = '-';
+                document.getElementById('runtime').textContent = '00:00:00';
+                document.getElementById('current-surface').innerHTML = '<div class="loading"><div class="loading-spinner"></div>Warte auf Daten...</div>';
+                document.getElementById('surface-list').innerHTML = '';
+                document.getElementById('damage-list').innerHTML = '<div class="loading"><div class="loading-spinner"></div>Warte auf Schäden...</div>';
                 
-                const damageList = document.getElementById('damage-list');
-                if (damageList) {
-                    damageList.innerHTML = '<div class="loading">Noch keine Schäden erkannt</div>';
-                }
+                // Jump to current GPS position (with small delay to ensure GPS data is fresh)
+                setTimeout(() => {
+                    fetchCurrentGPSPosition();
+                }, 300);
                 
-                // Enable start button, disable stop button
-                document.getElementById('btn-start').disabled = false;
-                document.getElementById('btn-stop').disabled = true;
-                
-                // Get current GPS position and show marker
-                fetchCurrentGPSPosition();
+                // Force update from server to ensure correct state
+                updateUI();
             }
-
-            try {
-                await fetch('/api/live/demo', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ demo: isDemoMode })
-                });
-            } catch (error) {
-                console.error('Error toggling demo:', error);
-            }
+            
+            // Update hardware status immediately
+            updateHardwareStatus();
         }
-
+        
         // Fetch current GPS position from backend
         async function fetchCurrentGPSPosition() {
             try {
-                const response = await fetch('/api/gps/current');
+                // Get current GPS position (not cached)
+                const response = await fetch('/api/hardware/status');
                 const data = await response.json();
                 
-                if (data.latitude && data.longitude) {
-                    // GPS available - show marker at current position
-                    const pos = [data.latitude, data.longitude];
+                console.log('fetchCurrentGPSPosition called:');
+                console.log('  GPS connected:', data.gps.connected);
+                console.log('  GPS latitude:', data.gps.latitude);
+                console.log('  GPS longitude:', data.gps.longitude);
+                console.log('  GPS satellites:', data.gps.satellites);
+                console.log('  Condition check:', data.gps && data.gps.connected && data.gps.latitude && data.gps.latitude !== 0);
+                
+                if (data.gps && data.gps.connected && data.gps.latitude && data.gps.latitude !== 0) {
+                    // GPS has valid current position - center map and show marker
+                    const pos = [data.gps.latitude, data.gps.longitude];
+                    
+                    console.log('  => Centering map on GPS position:', pos);
                     
                     if (currentMarker) {
                         currentMarker.setLatLng(pos);
@@ -612,34 +718,55 @@
                         }).addTo(map);
                     }
                     
-                    // Center map on GPS position
+                    // Center map on current GPS position when entering production mode
                     map.setView(pos, 15);
-                    console.log(`GPS Position: ${data.latitude}, ${data.longitude}`);
+                    console.log(`GPS Position: ${data.gps.latitude}, ${data.gps.longitude} (${data.gps.satellites} Satelliten)`);
                 } else {
-                    // No GPS - stay in Ried bei Mering
-                    map.setView([48.2904, 11.0434], 15);
-                    console.log('Kein GPS-Empfang - bleibe in Ried bei Mering');
+                    // No GPS signal - fallback to Ried bei Mering
+                    console.log('  => Using fallback position: Ried bei Mering');
+                    map.setView([48.2904, 11.0434], 13);
+                    console.log('Kein GPS-Empfang - Fallback auf Ried bei Mering');
                 }
             } catch (error) {
                 console.error('Error fetching GPS:', error);
-                // On error, stay in Ried
-                map.setView([48.2904, 11.0434], 15);
+                // On error, fallback to Ried
+                map.setView([48.2904, 11.0434], 13);
             }
         }
 
         // Start live system
         async function startLiveSystem() {
             try {
+                // Show "Starting..." status immediately
+                const statusBadge = document.getElementById('status-badge');
+                const btnStart = document.getElementById('btn-start');
+                const btnStop = document.getElementById('btn-stop');
+                const recordingStatus = document.getElementById('recording-status');
+                
+                isStarting = true;  // Set flag
+                statusBadge.textContent = 'Wird gestartet...';
+                statusBadge.className = 'status-badge status-busy';
+                btnStart.disabled = true;
+                btnStop.disabled = true;
+                recordingStatus.innerHTML = '<span class="status-dot status-busy"></span> System wird vorbereitet (GPS-Fix wird gewartet)...';
+                
                 const response = await fetch('/api/live/start', { method: 'POST' });
                 const data = await response.json();
                 
                 if (response.ok) {
-                    document.getElementById('status-badge').textContent = 'Läuft';
-                    document.getElementById('status-badge').className = 'status-badge status-running';
-                    document.getElementById('btn-start').disabled = true;
-                    document.getElementById('btn-stop').disabled = false;
+                    // Keep "Starting..." status - updateUI will change it when system is actually running
+                    console.log('Start command sent successfully, waiting for system to be ready...');
+                    // isStarting flag will be cleared by updateUI when is_running becomes true
                 } else {
-                    // Bessere Fehlermeldung
+                    // Reset on error
+                    isStarting = false;
+                    statusBadge.textContent = 'Bereit';
+                    statusBadge.className = 'status-badge status-ready';
+                    btnStart.disabled = false;
+                    btnStop.disabled = true;
+                    recordingStatus.innerHTML = '<span class="status-dot status-disconnected"></span> Inaktiv';
+                    
+                    // Show error
                     if (data.error === 'already_running') {
                         alert('System läuft bereits');
                     } else {
@@ -648,6 +775,15 @@
                 }
             } catch (error) {
                 console.error('Error starting:', error);
+                
+                // Reset on error
+                isStarting = false;
+                document.getElementById('status-badge').textContent = 'Bereit';
+                document.getElementById('status-badge').className = 'status-badge status-ready';
+                document.getElementById('btn-start').disabled = false;
+                document.getElementById('btn-stop').disabled = true;
+                document.getElementById('recording-status').innerHTML = '<span class="status-dot status-disconnected"></span> Inaktiv';
+                
                 alert('Fehler beim Starten: ' + error.message);
             }
         }
@@ -663,10 +799,21 @@
                     document.getElementById('status-badge').className = 'status-badge status-ready';
                     document.getElementById('btn-start').disabled = false;
                     document.getElementById('btn-stop').disabled = true;
+                    document.getElementById('recording-status').innerHTML = '<span class="status-dot status-disconnected"></span> Inaktiv';
+                    
+                    // Force UI update after a short delay to sync with server state
+                    setTimeout(() => {
+                        updateUI();
+                    }, 500);
                 } else {
                     // Bessere Fehlermeldung
                     if (data.error === 'not_running') {
                         alert('System läuft nicht - nichts zu stoppen');
+                        // Force button states to match reality
+                        document.getElementById('btn-start').disabled = false;
+                        document.getElementById('btn-stop').disabled = true;
+                        document.getElementById('status-badge').textContent = 'Bereit';
+                        document.getElementById('status-badge').className = 'status-badge status-ready';
                     } else {
                         alert('Fehler beim Stoppen: ' + (data.error || 'Unbekannt'));
                     }
@@ -685,6 +832,81 @@
             return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
         }
         
+        // Update Hardware Status
+        async function updateHardwareStatus() {
+            // Skip hardware check in demo mode
+            if (isDemoMode) {
+                document.getElementById('gps-status').innerHTML = '<span class="status-dot status-connected"></span> Demo Modus';
+                document.getElementById('gps-coords-row').style.display = 'none';
+                document.getElementById('camera-status').innerHTML = '<span class="status-dot status-connected"></span> Demo Modus';
+                document.getElementById('camera-info-row').style.display = 'none';
+                return;
+            }
+            
+            try {
+                const response = await fetch('/api/hardware/status');
+                if (!response.ok) {
+                    throw new Error('API request failed');
+                }
+                
+                const data = await response.json();
+                
+                // Update GPS Status
+                const gpsStatusEl = document.getElementById('gps-status');
+                const gpsCoordsRow = document.getElementById('gps-coords-row');
+                const gpsCoordsEl = document.getElementById('gps-coords');
+                
+                if (data.gps.connected && data.gps.latitude && data.gps.latitude !== 0 && data.gps.latitude !== null) {
+                    // GPS has valid fix
+                    gpsStatusEl.innerHTML = `<span class="status-dot status-connected"></span> ${data.gps.satellites} Satelliten`;
+                    gpsCoordsEl.textContent = `${data.gps.latitude.toFixed(6)}°, ${data.gps.longitude.toFixed(6)}°`;
+                    gpsCoordsRow.style.display = 'block';
+                } else if (data.gps.connected && data.gps.satellites > 0) {
+                    // GPS connected but no fix yet
+                    gpsStatusEl.innerHTML = `<span class="status-dot status-busy"></span> Sucht Signal (${data.gps.satellites} Sat)`;
+                    gpsCoordsRow.style.display = 'none';
+                } else if (data.gps.connected) {
+                    // GPS connected but no satellites
+                    gpsStatusEl.innerHTML = '<span class="status-dot status-busy"></span> Sucht Signal...';
+                    gpsCoordsRow.style.display = 'none';
+                } else {
+                    // GPS not connected
+                    gpsStatusEl.innerHTML = '<span class="status-dot status-disconnected"></span> Nicht verbunden';
+                    gpsCoordsRow.style.display = 'none';
+                }
+                
+                // Update Camera Status
+                const cameraStatusEl = document.getElementById('camera-status');
+                const cameraInfoRow = document.getElementById('camera-info-row');
+                const cameraInfoEl = document.getElementById('camera-info');
+                
+                if (!data.camera.available) {
+                    cameraStatusEl.innerHTML = '<span class="status-dot status-disconnected"></span> Nicht verfügbar';
+                    cameraInfoRow.style.display = 'none';
+                } else if (data.camera.busy) {
+                    cameraStatusEl.innerHTML = '<span class="status-dot status-busy"></span> In Benutzung';
+                    if (data.camera.device) {
+                        cameraInfoEl.textContent = data.camera.name || data.camera.device;
+                        cameraInfoRow.style.display = 'block';
+                    }
+                } else {
+                    cameraStatusEl.innerHTML = '<span class="status-dot status-connected"></span> Bereit';
+                    if (data.camera.device) {
+                        cameraInfoEl.textContent = data.camera.name || data.camera.device;
+                        cameraInfoRow.style.display = 'block';
+                    } else {
+                        cameraInfoRow.style.display = 'none';
+                    }
+                }
+            } catch (error) {
+                console.error('Error fetching hardware status:', error);
+                document.getElementById('gps-status').innerHTML = '<span class="status-dot status-disconnected"></span> Prüfung fehlgeschlagen';
+                document.getElementById('camera-status').innerHTML = '<span class="status-dot status-disconnected"></span> Prüfung fehlgeschlagen';
+                document.getElementById('gps-coords-row').style.display = 'none';
+                document.getElementById('camera-info-row').style.display = 'none';
+            }
+        }
+        
         // Update UI
         async function updateUI() {
             try {
@@ -696,18 +918,37 @@
                     const response = await fetch('/api/live/status');
                     data = await response.json();
                     
-                    // Update status badge
+                    // Update status badge and recording status based on server state
                     const statusBadge = document.getElementById('status-badge');
+                    const recordingStatus = document.getElementById('recording-status');
+                    const btnStart = document.getElementById('btn-start');
+                    const btnStop = document.getElementById('btn-stop');
+                    
                     if (data.is_running) {
+                        // System is running - clear starting flag
+                        if (isStarting) {
+                            console.log('System has started successfully!');
+                            isStarting = false;
+                        }
                         statusBadge.textContent = 'Läuft';
                         statusBadge.className = 'status-badge status-running';
-                        document.getElementById('btn-start').disabled = true;
-                        document.getElementById('btn-stop').disabled = false;
+                        recordingStatus.innerHTML = '<span class="status-dot status-connected"></span> Aktiv';
+                        btnStart.disabled = true;
+                        btnStop.disabled = false;
+                    } else if (isStarting) {
+                        // Keep "Starting..." status while waiting
+                        statusBadge.textContent = 'Wird gestartet...';
+                        statusBadge.className = 'status-badge status-busy';
+                        recordingStatus.innerHTML = '<span class="status-dot status-busy"></span> System wird vorbereitet (GPS-Fix wird gewartet)...';
+                        btnStart.disabled = true;
+                        btnStop.disabled = true;
                     } else {
+                        // System stopped
                         statusBadge.textContent = 'Bereit';
                         statusBadge.className = 'status-badge status-ready';
-                        document.getElementById('btn-start').disabled = false;
-                        document.getElementById('btn-stop').disabled = true;
+                        recordingStatus.innerHTML = '<span class="status-dot status-disconnected"></span> Inaktiv';
+                        btnStart.disabled = false;
+                        btnStop.disabled = true;
                     }
                 }
                 
@@ -746,25 +987,53 @@
                 // Update route with colored segments
                 if (data.route_points && data.route_points.length > 0) {
                     updateRoute(data.route_points);
-                } else if (!isDemoMode && data.current_position && data.is_running) {
-                    // Show current position only if system is actually running
+                } else if (!isDemoMode && data.current_position) {
+                    // Show current position if available (even when not running)
                     const pos = Array.isArray(data.current_position) 
                         ? data.current_position 
                         : [data.current_position.latitude, data.current_position.longitude];
                     
-                    if (!currentMarker) {
-                        currentMarker = L.marker(pos, {
-                            icon: L.divIcon({
-                                className: 'current-position',
-                                html: '<div style="background: #27ae60; width: 16px; height: 16px; border-radius: 50%; border: 3px solid white; box-shadow: 0 2px 8px rgba(0,0,0,0.3);"></div>',
-                                iconSize: [16, 16]
-                            })
-                        }).addTo(map);
-                    } else {
-                        currentMarker.setLatLng(pos);
-                    }
+                    console.log('updateUI - current_position:', pos);
                     
-                    map.setView(pos, 15);
+                    // Only show marker if position is valid (not 0,0 and not the Ried fallback)
+                    const isValidPos = pos[0] !== 0 && pos[1] !== 0 && 
+                                      !(pos[0] === 48.2904 && pos[1] === 11.0434);
+                    
+                    console.log('updateUI - isValidPos:', isValidPos);
+                    
+                    if (isValidPos) {
+                        console.log('updateUI - Adding/updating marker at:', pos);
+                        if (!currentMarker) {
+                            currentMarker = L.marker(pos, {
+                                icon: L.divIcon({
+                                    className: 'current-position',
+                                    html: '<div style="background: #27ae60; width: 16px; height: 16px; border-radius: 50%; border: 3px solid white; box-shadow: 0 2px 8px rgba(0,0,0,0.3);"></div>',
+                                    iconSize: [16, 16]
+                                })
+                            }).addTo(map);
+                            // Center only on very first position when session starts
+                            if (!hasStartedSession && data.is_running) {
+                                console.log('updateUI - Centering map on first position');
+                                map.setView(pos, 16);
+                                hasStartedSession = true;
+                            }
+                        } else {
+                            // Just update marker position, don't move map
+                            currentMarker.setLatLng(pos);
+                        }
+                    } else if (currentMarker) {
+                        console.log('updateUI - Removing marker (invalid position)');
+                        // Remove marker if position becomes invalid
+                        map.removeLayer(currentMarker);
+                        currentMarker = null;
+                    }
+                } else {
+                    console.log('updateUI - No position or demo mode. isDemoMode:', isDemoMode, 'current_position:', data.current_position);
+                    if (currentMarker) {
+                        // Remove marker when switching to demo mode or no position available
+                        map.removeLayer(currentMarker);
+                        currentMarker = null;
+                    }
                 }
                 
                 // Update damages
@@ -908,14 +1177,50 @@
         // Generate demo data on load
         generateDemoData();
         
-        // Initial setup: Demo mode is ON by default
-        isDemoMode = true;
-        document.getElementById('btn-start').disabled = true;
-        document.getElementById('btn-stop').disabled = true;
+        // Initial setup: Get demo mode from server
+        fetch('/api/live/status')
+            .then(res => res.json())
+            .then(data => {
+                isDemoMode = data.demo_mode || false;
+                
+                // Update UI based on initial state
+                const demoToggle = document.getElementById('demo-toggle');
+                const statusBadge = document.getElementById('status-badge');
+                const systemModeEl = document.getElementById('system-mode');
+                const btnStart = document.getElementById('btn-start');
+                const btnStop = document.getElementById('btn-stop');
+                
+                if (isDemoMode) {
+                    demoToggle.classList.add('active');
+                    statusBadge.textContent = 'Demo';
+                    statusBadge.className = 'status-badge status-demo';
+                    systemModeEl.textContent = 'Demo';
+                    btnStart.disabled = true;
+                    btnStop.disabled = true;
+                } else {
+                    demoToggle.classList.remove('active');
+                    statusBadge.textContent = 'Bereit';
+                    statusBadge.className = 'status-badge status-ready';
+                    systemModeEl.textContent = 'Produktiv';
+                    btnStart.disabled = false;
+                    btnStop.disabled = true;
+                }
+                
+                // Initial update
+                updateUI();
+                updateHardwareStatus();
+            })
+            .catch(err => {
+                console.error('Failed to get initial status:', err);
+                // Fallback to production mode
+                isDemoMode = false;
+                updateUI();
+                updateHardwareStatus();
+            });
         
         // Start updates
         setInterval(updateUI, UPDATE_INTERVAL);
-        updateUI(); // Initial update
+        setInterval(updateHardwareStatus, 5000); // Update hardware status every 5 seconds
     </script>
 </body>
 </html>

@@ -1,0 +1,47 @@
+# Configuration for Inference Mode
+# Used for live detection with trained TensorRT model
+# Detects damages and creates GeoJSON for map visualization
+
+model:
+  path: "models/surface_detection.engine"  # TensorRT engine file
+  confidence_threshold: 0.5  # Minimum confidence for detections
+  nms_threshold: 0.4
+  input_size: [640, 640]
+  classes:
+    - "asphalt"
+    - "concrete"
+    - "gravel"
+    - "cobblestone"
+    - "pothole"
+    - "crack"
+    - "patch"
+    - "bump"
+    - "debris"
+
+gps:
+  port: "/dev/ttyACM0"  # Adjust for your GPS module
+  baudrate: 9600
+  timeout: 5
+
+camera:
+  device_id: 0  # Camera device ID
+  resolution: [1280, 720]  # Good balance of quality and processing speed
+  fps: 10  # Frames per second
+
+inference:
+  save_detection_images: true  # Save images of detected damages
+  save_interval: 30  # Save progress every X seconds
+  damage_classes:  # Only save detections for these classes
+    - "pothole"
+    - "crack"
+    - "bump"
+    - "debris"
+
+storage:
+  output_dir: "inference_results"  # Base directory for results
+
+logging:
+  level: "INFO"
+  file: "inference_mode.log"
+  max_bytes: 10485760  # 10MB
+  backup_count: 3

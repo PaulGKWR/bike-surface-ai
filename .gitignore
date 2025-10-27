@@ -205,3 +205,12 @@ cython_debug/
 marimo/_static/
 marimo/_lsp/
 __marimo__/
+
+# Bike Surface AI specific
+edge/data_collection/
+edge/inference_results/
+edge/live_sessions/
+edge/test_capture/
+edge/viewer_data/
+*.log
+live_state.json

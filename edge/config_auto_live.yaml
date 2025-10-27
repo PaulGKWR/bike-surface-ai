@@ -1,0 +1,154 @@
+# ═══════════════════════════════════════════════════════════════
+# BIKE SURFACE AI - VOLLAUTOMATISCHES LIVE-SYSTEM
+# ═══════════════════════════════════════════════════════════════
+# Jetson erfasst, analysiert und lädt automatisch hoch zu Azure + GitHub
+
+# GPS-Konfiguration (Navilock 62756 u-blox NEO-M8U)
+gps:
+  port: "/dev/ttyACM0"
+  baudrate: 9600
+  timeout: 1.0
+  min_satellites: 4  # Mindestanzahl für gültigen Fix
+  max_wait_seconds: 60  # Max Wartezeit für ersten Fix
+
+# Kamera (Logitech HD Pro C920)
+camera:
+  device_id: 0
+  resolution: [1920, 1080]  # Full HD
+  fps: 10
+  capture_interval: 2.0  # Alle 2 Sekunden ein Bild
+
+# AI Modell für Inference
+model:
+  path: "models/surface_damage.pt"  # Trainiertes YOLOv8 Modell
+  confidence_threshold: 0.5
+  device: "0"  # GPU Device ID (Jetson)
+  imgsz: 640  # Input size für YOLOv8
+  
+  demo_mode: true  # true = Demo-Daten ohne echtes Modell, false = echtes Modell
+  
+  # Klassen für Oberflächentypen
+  surface_classes:
+    asphalt_excellent: 0  # Perfekter Asphalt
+    asphalt_good: 1       # Guter Zustand
+    asphalt_fair: 2       # Akzeptabel
+    asphalt_poor: 3       # Schlecht
+    concrete: 4           # Beton
+    cobblestone: 5        # Kopfsteinpflaster
+    paving_stones: 6      # Pflastersteine
+    gravel: 7             # Schotter
+    dirt: 8               # Unbefestigt
+  
+  # Klassen für Schäden
+  damage_classes:
+    pothole: 10           # Schlagloch
+    crack_longitudinal: 11 # Längsriss
+    crack_transverse: 12  # Querriss
+    crack_alligator: 13   # Netzriss
+    patch: 14             # Flickstelle
+    bump: 15              # Bodenwelle
+    depression: 16        # Absenkung
+    edge_damage: 17       # Randschaden
+
+# Azure Blob Storage (Bild-Hosting)
+azure:
+  enabled: true
+  connection_string: ""  # WICHTIG: Azure Connection String hier eintragen!
+  container_name: "bike-surface-data"
+  
+  upload_mode: "after_session"  # "live" = während Fahrt, "after_session" = am Ende
+  
+  # Live-Upload Einstellungen (nur wenn upload_mode = "live")
+  live_upload:
+    batch_size: 5        # Upload alle X Bilder
+    max_queue: 50        # Max Queue-Größe
+    retry_attempts: 3    # Retry bei Fehler
+  
+  # Was hochladen?
+  upload_surfaces: false  # Oberflächen-Bilder (nein = nur Metadaten)
+  upload_damages: true    # Schaden-Bilder (immer hochladen)
+  upload_route: true      # GPS-Track als GeoJSON
+
+# GitHub Pages Auto-Update
+github:
+  enabled: true
+  auto_commit: true           # Automatisch committen nach Session
+  repo_path: "/home/kwr/bike-surface-ai"
+  branch: "main"              # Oder "gh-pages"
+  
+  # Autor Info für Commits
+  git_user: "Bike Surface AI"
+  git_email: "bike-ai@example.com"
+  
+  # GeoJSON Generierung
+  geojson:
+    output_dir: "docs/data"   # docs/ für GitHub Pages
+    
+    # Strecken-Features
+    route_segments: true      # Strecke nach Oberflächentyp segmentieren
+    segment_length_m: 10      # Alle 10m Oberfläche neu bewerten
+    
+    # Schaden-Features
+    damage_markers: true
+    group_radius_m: 1.0       # Schäden < 1m gruppieren
+
+# Lokale Datenspeicherung
+storage:
+  base_dir: "live_sessions"
+  keep_local_copies: true     # Auch lokal speichern
+  cleanup_after_upload: false # Nicht löschen nach Upload
+  
+  # Session-Struktur
+  save_all_images: true       # Alle Bilder speichern
+  save_only_detections: false # Nur Detections speichern
+
+# Oberflächenerkennung
+surface_detection:
+  enabled: true
+  segment_length_m: 10        # Alle 10m Oberfläche neu bewerten
+  confidence_threshold: 0.5   # Min. Confidence für Oberfläche
+  smoothing: true             # Glättung über mehrere Messungen
+  smoothing_window: 3         # Median über X Messungen
+
+# Schadenerkennung
+damage_detection:
+  enabled: true
+  save_images: true           # Schaden-Bilder speichern
+  capture_context: 3          # X Bilder vor/nach Schaden (für Kontext)
+  min_confidence: 0.6         # Min. Confidence für Schaden
+  
+  # Severität berechnen
+  severity_rules:
+    pothole:
+      high: 0.85   # confidence >= 0.85 → hoher Schweregrad
+      medium: 0.70
+    crack_alligator:
+      high: 0.80
+      medium: 0.65
+    # Andere Schäden: default medium=0.70, high=0.85
+
+# Web-UI Server
+web_ui:
+  host: "0.0.0.0"  # Für mobilen Zugriff
+  port: 5000
+  debug: false
+  
+  # Live-Updates per WebSocket
+  websocket:
+    enabled: true
+    update_interval: 1.0  # Sekunden
+
+# Logging
+logging:
+  level: "INFO"   # DEBUG, INFO, WARNING, ERROR
+  console: true
+  file: "auto_live.log"
+  max_bytes: 10485760  # 10MB
+  backup_count: 5
+
+# Statistik & Metriken
+metrics:
+  track_speed: true           # Geschwindigkeit berechnen
+  track_distance: true        # Distanz berechnen
+  surface_quality_score: true # Oberflächenqualität bewerten (0-100)
+  export_summary: true        # summary.json exportieren

@@ -4,41 +4,40 @@ A proof-of-concept system for detecting and mapping road and bicycle path surfac
 
 ## 🎯 Features
 
-- **Real-time Surface Detection**: Identify different surface types (asphalt, concrete, gravel, cobblestone)
+- **Real-time Surface Detection**: Identify different surface types (asphalt good/poor, cobblestone, gravel, paved, unpaved)
 - **Damage Detection**: Detect road damages (potholes, cracks, patches, bumps, debris)
 - **GPS Geotagging**: Every detection is tagged with precise GPS coordinates
-- **Cloud Storage**: Data is stored in PostgreSQL with PostGIS for geographic queries
-- **Interactive Map**: Web-based visualization using Leaflet.js
-- **Edge Computing**: AI inference runs directly on Jetson Orin Nano with TensorRT optimization
+- **Training Data Collection**: Web UI for capturing training images with GPS metadata
+- **Live Inference Monitoring**: Real-time map visualization with color-coded routes and damage markers
+- **Demo Mode**: Test system functionality with synthetic data without hardware
+- **Edge Computing**: AI inference runs directly on Jetson Nano with YOLOv8/TensorRT
+- **Interactive Web Interface**: Responsive Flask-based UI with Leaflet.js mapping
 
 ## 📁 Project Structure
 
 ```
 bike-surface-ai/
-├── edge/                      # Edge device code (Jetson Orin Nano)
-│   ├── main.py               # Main application entry point
+├── edge/                      # Edge device code (Jetson Nano)
+│   ├── web_ui.py             # Flask web server (training + live UI)
+│   ├── simple_capture.py     # Training data collection
+│   ├── auto_live_system.py   # Live inference system
 │   ├── ai_inference.py       # YOLOv8/TensorRT inference
 │   ├── gps_module.py         # GPS data acquisition
-│   ├── config.yaml           # Edge device configuration
-│   └── requirements.txt      # Python dependencies
+│   ├── config*.yaml          # Configuration files
+│   ├── requirements.txt      # Python dependencies
+│   ├── setup_jetson.sh       # Jetson setup script
+│   ├── start_webui.sh        # Web UI launcher
+│   ├── templates/            # Web UI templates
+│   │   ├── index.html        # Training data collection UI
+│   │   └── live_inference.html # Live monitoring UI
+│   ├── data_collection/      # Training sessions (gitignored)
+│   └── live_sessions/        # Live inference sessions (gitignored)
 │
-├── cloud/                     # Cloud backend and frontend
+├── cloud/                     # Cloud backend and frontend (optional)
 │   ├── api/                  # FastAPI backend
-│   │   ├── main.py          # API endpoints
-│   │   ├── requirements.txt # Backend dependencies
-│   │   ├── Dockerfile       # Container configuration
-│   │   └── Procfile         # Deployment configuration
-│   │
 │   ├── db/                   # Database schema
-│   │   └── schema.sql       # PostgreSQL + PostGIS schema
-│   │
 │   ├── web/                  # Frontend web interface
-│   │   ├── index.html       # Main HTML page
-│   │   ├── script.js        # JavaScript logic
-│   │   └── style.css        # Styling
-│   │
 │   └── nginx/                # Nginx configuration
-│       └── nginx.conf
 │
 ├── training/                  # AI model training
 │   ├── train.py              # YOLOv8 training script
@@ -46,8 +45,9 @@ bike-surface-ai/
 │   ├── convert_tensorrt.py   # Convert to TensorRT
 │   └── yolov8_config.yaml    # Training configuration
 │
-├── docker-compose.yml         # Docker orchestration
-├── .env.example              # Environment variables template
+├── ARCHITECTURE.md            # System architecture documentation
+├── QUICKSTART.md              # Quick start guide
+├── docker-compose.yml         # Docker orchestration (cloud)
 └── README.md                 # This file
 ```
 
@@ -62,10 +62,12 @@ bike-surface-ai/
 
 ## 🚀 Quick Start
 
+See [QUICKSTART.md](QUICKSTART.md) for a fast setup guide or [ARCHITECTURE.md](ARCHITECTURE.md) for detailed system documentation.
+
 ### Prerequisites
 
-- **For Edge Device**: NVIDIA Jetson Orin Nano with JetPack 5.x or 6.x
-- **For Cloud**: Docker and Docker Compose installed
+- **For Edge Device**: NVIDIA Jetson Nano with JetPack 4.6+ or Jetson Orin Nano with JetPack 5.x/6.x
+- **Hardware**: USB Camera (e.g., Logitech C920), GPS Module (e.g., Navilock 62756)
 - **For Training**: Python 3.8+, CUDA-capable GPU (optional)
 
 ### 1. Clone Repository
@@ -75,7 +77,42 @@ git clone https://github.com/yourusername/bike-surface-ai.git
 cd bike-surface-ai
 ```
 
-### 2. Setup Cloud Infrastructure
+### 2. Setup Edge Device (Jetson Nano)
+
+```bash
+cd edge
+
+# Install dependencies
+pip3 install -r requirements.txt
+
+# Edit configuration
+nano config_collection.yaml  # For training data collection
+nano config_auto_live.yaml   # For live inference
+
+# Start web UI
+./start_webui.sh
+# Or manually: python3 web_ui.py
+```
+
+The web interface will be available at `http://<jetson-ip>:5000`
+
+### 3. Collect Training Data
+
+1. Open browser: `http://<jetson-ip>:5000`
+2. Click "Start Capture" to begin collecting images
+3. Images are saved every 2 seconds with GPS coordinates
+4. Click "Stop Capture" when done
+5. Sessions saved to `data_collection/TIMESTAMP/`
+
+### 4. Run Live Inference
+
+1. Navigate to Live page in web UI
+2. Toggle "Demo Mode" for testing (no hardware needed)
+3. Click "Start Live System" to begin inference
+4. View real-time route with color-coded surface types
+5. Damage markers appear automatically
+
+### 5. Optional: Setup Cloud Backend
 
 ```bash
 # Copy environment variables template
@@ -86,34 +123,9 @@ nano .env
 
 # Start all services (database, API, web)
 docker-compose up -d
-
-# Check if services are running
-docker-compose ps
-
-# View logs
-docker-compose logs -f
 ```
 
-The web interface will be available at `http://localhost`
-The API will be available at `http://localhost:8000`
-
-### 3. Setup Edge Device (Jetson Orin Nano)
-
-```bash
-# Navigate to edge directory
-cd edge
-
-# Install Python dependencies
-pip3 install -r requirements.txt
-
-# Edit configuration
-nano config.yaml
-# Update cloud.api_url with your server URL
-# Update gps.port with your GPS device port
-
-# Run the edge system
-python3 main.py
-```
+Cloud interface available at `http://localhost`
 
 ## 📊 Training Custom Model
 
@@ -179,6 +191,57 @@ nano ../edge/config.yaml
 ```
 
 ## 🗺️ Using the Web Interface
+
+### Training Data Collection Page
+
+1. Open `http://<jetson-ip>:5000` in browser
+2. Camera preview shows live feed
+3. Click "Start Capture" to begin session
+4. Images captured every 2 seconds with GPS metadata
+5. View session statistics (images, distance, duration)
+6. Browse previous sessions in session list
+7. Download GeoJSON route data
+
+### Live Inference Page
+
+1. Navigate to Live page from navbar
+2. **Demo Mode**: Toggle on for testing without hardware
+   - Generates synthetic circular route around Ried bei Mering
+   - Simulates surface types and damages
+   - Perfect for UI testing and demonstrations
+3. **Real Mode**: Toggle off to use actual hardware
+   - Shows current GPS position
+   - Click "Start Live System" to begin
+   - Real-time map updates every 2 seconds
+4. **Map Features**:
+   - Color-coded route segments by surface type:
+     - 🟢 Green: Good asphalt
+     - 🟡 Yellow: Medium asphalt
+     - 🔴 Red: Poor asphalt
+     - 🔵 Blue: Cobblestone
+     - 🟠 Orange: Gravel/Unpaved
+   - Damage markers with severity colors:
+     - 🟠 Orange: Low severity
+     - 🟡 Yellow: Medium severity
+     - 🔴 Red: High severity
+   - Legend showing all surface types
+   - Real-time statistics (distance, speed, images)
+5. Click markers to see detection details
+
+### API Endpoints
+
+The web UI provides several REST endpoints:
+
+- `GET /api/status` - Training session status
+- `GET /api/live/status` - Live inference status or demo data
+- `POST /api/live/start` - Start live inference system
+- `POST /api/live/stop` - Stop live inference system
+- `POST /api/live/demo` - Toggle demo mode
+- `GET /api/gps/current` - Get current GPS position
+
+## 🗺️ Using the Cloud Web Interface (Optional)
+
+If you've deployed the cloud backend:
 
 1. Open web browser and navigate to `http://your-server-ip`
 2. Click "Refresh Data" to load rides

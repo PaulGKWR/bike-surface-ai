@@ -1,0 +1,921 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bike Surface AI - Live Inference</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: #1a1a1a;
+            color: #fff;
+            overflow: hidden;
+        }
+
+        /* Navigation */
+        .navbar {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            padding: 10px 20px;
+            display: flex;
+            gap: 15px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.3);
+        }
+
+        .navbar a {
+            text-decoration: none;
+            color: rgba(255,255,255,0.8);
+            padding: 8px 16px;
+            border-radius: 6px;
+            font-weight: 600;
+            transition: all 0.2s;
+        }
+
+        .navbar a:hover { background: rgba(255,255,255,0.2); color: white; }
+        .navbar a.active { background: rgba(255,255,255,0.3); color: white; }
+        
+        .container {
+            display: grid;
+            grid-template-rows: auto 1fr;
+            height: calc(100vh - 50px);
+        }
+        
+        /* Header */
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            padding: 15px 20px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.3);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .header-left h1 {
+            font-size: 1.3em;
+            margin-bottom: 3px;
+        }
+        
+        .header .session-info {
+            font-size: 0.85em;
+            opacity: 0.9;
+        }
+
+        .header-right {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+
+        .status-badge {
+            padding: 6px 14px;
+            border-radius: 20px;
+            font-size: 0.9em;
+            font-weight: bold;
+        }
+
+        .status-running { background: #27ae60; }
+        .status-stopped { background: #95a5a6; }
+
+        /* Demo Toggle */
+        .demo-toggle {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            background: rgba(255,255,255,0.1);
+            padding: 6px 12px;
+            border-radius: 20px;
+        }
+
+        .toggle-switch {
+            position: relative;
+            width: 44px;
+            height: 24px;
+            background: #ccc;
+            border-radius: 12px;
+            cursor: pointer;
+            transition: background 0.3s;
+        }
+
+        .toggle-switch.active { background: #27ae60; }
+
+        .toggle-switch::after {
+            content: '';
+            position: absolute;
+            width: 18px;
+            height: 18px;
+            border-radius: 50%;
+            background: white;
+            top: 3px;
+            left: 3px;
+            transition: left 0.3s;
+        }
+
+        .toggle-switch.active::after { left: 23px; }
+
+        /* Control Buttons */
+        .controls { display: flex; gap: 8px; }
+
+        .btn {
+            padding: 8px 16px;
+            border: none;
+            border-radius: 6px;
+            font-size: 0.9em;
+            font-weight: bold;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .btn-start { background: #27ae60; color: white; }
+        .btn-start:hover { background: #229954; }
+        .btn-stop { background: #e74c3c; color: white; }
+        .btn-stop:hover { background: #c0392b; }
+        .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+        
+        /* Main Content */
+        .main-content {
+            display: grid;
+            grid-template-columns: 1fr 400px;
+            gap: 0;
+            overflow: hidden;
+        }
+        
+        /* Map */
+        #map {
+            height: 100%;
+            width: 100%;
+        }
+        
+        /* Sidebar */
+        .sidebar {
+            background: #2c2c2c;
+            overflow-y: auto;
+            padding: 20px;
+        }
+        
+        .stat-card {
+            background: #3c3c3c;
+            border-radius: 10px;
+            padding: 15px;
+            margin-bottom: 15px;
+        }
+        
+        .stat-card h3 {
+            color: #667eea;
+            margin-bottom: 10px;
+            font-size: 1.1em;
+        }
+        
+        .stat-row {
+            display: flex;
+            justify-content: space-between;
+            padding: 8px 0;
+            border-bottom: 1px solid #4c4c4c;
+        }
+        
+        .stat-row:last-child {
+            border-bottom: none;
+        }
+        
+        .stat-label {
+            color: #999;
+        }
+        
+        .stat-value {
+            color: #fff;
+            font-weight: bold;
+        }
+        
+        .surface-badge, .damage-badge {
+            display: inline-block;
+            padding: 4px 10px;
+            border-radius: 12px;
+            font-size: 0.85em;
+            margin: 3px;
+        }
+        
+        .surface-badge {
+            background: #27ae60;
+        }
+        
+        .damage-badge {
+            background: #e74c3c;
+        }
+        
+        /* Recent Damages */
+        .damage-list {
+            max-height: 400px;
+            overflow-y: auto;
+        }
+        
+        .damage-item {
+            background: #4c4c4c;
+            border-radius: 8px;
+            padding: 12px;
+            margin-bottom: 10px;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+        
+        .damage-item:hover {
+            background: #5c5c5c;
+        }
+        
+        .damage-item .type {
+            color: #e74c3c;
+            font-weight: bold;
+            margin-bottom: 5px;
+        }
+        
+        .damage-item .info {
+            font-size: 0.85em;
+            color: #999;
+        }
+        
+        /* Status Indicator */
+        .status {
+            display: inline-block;
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            margin-right: 8px;
+            animation: pulse 2s infinite;
+        }
+        
+        .status.active {
+            background: #27ae60;
+        }
+        
+        .status.inactive {
+            background: #95a5a6;
+            animation: none;
+        }
+        
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+        
+        /* Loading */
+        .loading {
+            text-align: center;
+            padding: 40px;
+            color: #999;
+        }
+        
+        .loading-spinner {
+            border: 4px solid #3c3c3c;
+            border-top: 4px solid #667eea;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 15px;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        /* Map Legend */
+        .legend, .map-legend {
+            background: white !important;
+            padding: 12px;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+            color: #2c3e50 !important;
+        }
+
+        .legend-title, .map-legend strong {
+            font-weight: bold;
+            margin-bottom: 8px;
+            color: #2c3e50 !important;
+        }
+
+        .legend-item, .map-legend span {
+            display: flex;
+            align-items: center;
+            margin-bottom: 6px;
+            font-size: 0.85em;
+            color: #2c3e50 !important;
+        }
+
+        .legend-color {
+            width: 20px;
+            height: 4px;
+            margin-right: 8px;
+            border-radius: 2px;
+        }
+
+        /* Damage Popup */
+        .damage-popup { min-width: 200px; }
+        .damage-popup img {
+            width: 100%;
+            border-radius: 4px;
+            margin-bottom: 8px;
+        }
+
+        .damage-popup-title {
+            font-weight: bold;
+            color: #e74c3c;
+            margin-bottom: 4px;
+        }
+
+        .damage-popup-info {
+            font-size: 0.9em;
+            color: #666;
+        }
+    </style>
+</head>
+<body>
+    <div class="navbar">
+        <a href="/">📸 Trainings-Datensammlung</a>
+        <a href="/live" class="active">🤖 Live Inference</a>
+    </div>
+
+    <div class="container">
+        <!-- Header -->
+        <div class="header">
+            <div class="header-left">
+                <h1>🚴 Bike Surface AI - Live Inference</h1>
+                <div class="session-info">
+                    Session: <span id="session-id">-</span> | 
+                    Laufzeit: <span id="runtime">00:00:00</span>
+                </div>
+            </div>
+            <div class="header-right">
+                <div class="demo-toggle">
+                    <span style="font-size: 0.9em;">Demo</span>
+                    <div class="toggle-switch active" id="demo-toggle" onclick="toggleDemo()"></div>
+                </div>
+                <div class="status-badge status-demo" id="status-badge">Demo</div>
+                <div class="controls">
+                    <button class="btn btn-start" id="btn-start" onclick="startLiveSystem()">▶️ Start</button>
+                    <button class="btn btn-stop" id="btn-stop" onclick="stopLiveSystem()" disabled>⏹️ Stop</button>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Main Content -->
+        <div class="main-content">
+            <!-- Map -->
+            <div id="map"></div>
+            
+            <!-- Sidebar -->
+            <div class="sidebar">
+                <!-- Statistics -->
+                <div class="stat-card">
+                    <h3>📊 Statistik</h3>
+                    <div class="stat-row">
+                        <span class="stat-label">Bilder:</span>
+                        <span class="stat-value" id="stat-images">0</span>
+                    </div>
+                    <div class="stat-row">
+                        <span class="stat-label">Distanz:</span>
+                        <span class="stat-value" id="stat-distance">0.00 km</span>
+                    </div>
+                    <div class="stat-row">
+                        <span class="stat-label">Geschwindigkeit:</span>
+                        <span class="stat-value" id="stat-speed">0.0 km/h</span>
+                    </div>
+                </div>
+                
+                <!-- Current Surface -->
+                <div class="stat-card">
+                    <h3>🛣️ Aktuelle Oberfläche</h3>
+                    <div id="current-surface" style="text-align: center; padding: 10px;">
+                        <div class="loading">
+                            <div class="loading-spinner"></div>
+                            Warte auf Daten...
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Detected Surfaces -->
+                <div class="stat-card">
+                    <h3>📋 Erkannte Oberflächen</h3>
+                    <div id="surface-list"></div>
+                </div>
+                
+                <!-- Recent Damages -->
+                <div class="stat-card">
+                    <h3>⚠️ Letzte Schäden</h3>
+                    <div class="damage-list" id="damage-list">
+                        <div class="loading">
+                            <div class="loading-spinner"></div>
+                            Warte auf Schäden...
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script>
+        // Initialize map - Start with Ried bei Mering (86510 Aichach-Friedberg)
+        const map = L.map('map').setView([48.2904, 11.0434], 15);
+        
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            attribution: '© OpenStreetMap contributors',
+            maxZoom: 19
+        }).addTo(map);
+        
+        // Layers
+        let routeLayer = L.layerGroup().addTo(map);
+        let currentMarker = null;
+        const damageMarkers = [];
+        
+        // State
+        let isDemoMode = false;
+        let demoData = null;
+        
+        // Update interval
+        const UPDATE_INTERVAL = 2000; // 2 seconds
+        
+        // Damage type translations
+        const DAMAGE_NAMES = {
+            'pothole': 'Schlagloch',
+            'crack_longitudinal': 'Längsriss',
+            'crack_transverse': 'Querriss',
+            'crack_alligator': 'Netzriss',
+            'patch': 'Flickstelle',
+            'bump': 'Bodenwelle',
+            'depression': 'Absenkung',
+            'edge_damage': 'Randschaden'
+        };
+        
+        const SURFACE_NAMES = {
+            'asphalt_excellent': 'Asphalt (Exzellent)',
+            'asphalt_good': 'Asphalt (Gut)',
+            'asphalt_fair': 'Asphalt (Akzeptabel)',
+            'asphalt_poor': 'Asphalt (Schlecht)',
+            'concrete': 'Beton',
+            'cobblestone': 'Kopfsteinpflaster',
+            'paving_stones': 'Pflastersteine',
+            'gravel': 'Schotter',
+            'dirt': 'Unbefestigt'
+        };
+
+        const SURFACE_COLORS = {
+            'asphalt_excellent': '#00ff00',
+            'asphalt_good': '#7fff00',
+            'asphalt_fair': '#ffff00',
+            'asphalt_poor': '#ff8800',
+            'concrete': '#00ffff',
+            'cobblestone': '#0000ff',
+            'paving_stones': '#8888ff',
+            'gravel': '#ff4400',
+            'dirt': '#8b4513'
+        };
+
+        // Generate demo data
+        function generateDemoData() {
+            const center = { lat: 48.2904, lon: 11.0434 };
+            const radius = 0.01;
+            const points = 50;
+            const route = [];
+            const surfaceTypes = ['asphalt_good', 'asphalt_fair', 'asphalt_poor', 'cobblestone', 'gravel'];
+            
+            for (let i = 0; i < points; i++) {
+                const angle = (i / points) * 2 * Math.PI;
+                const lat = center.lat + radius * Math.cos(angle);
+                const lon = center.lon + radius * Math.sin(angle);
+                const surface = surfaceTypes[Math.floor(Math.random() * surfaceTypes.length)];
+                
+                route.push({
+                    latitude: lat,
+                    longitude: lon,
+                    surface_type: surface
+                });
+            }
+
+            const damages = [
+                { latitude: 48.291, longitude: 11.045, damage_type: 'pothole', severity: 'high', confidence: 0.92, timestamp: new Date().toISOString() },
+                { latitude: 48.289, longitude: 11.042, damage_type: 'crack_longitudinal', severity: 'medium', confidence: 0.85, timestamp: new Date().toISOString() },
+                { latitude: 48.292, longitude: 11.041, damage_type: 'bump', severity: 'low', confidence: 0.78, timestamp: new Date().toISOString() }
+            ];
+
+            demoData = {
+                session_id: 'Demo-Session',
+                is_running: false,
+                current_surface: 'asphalt_good',
+                stats: {
+                    total_images: 127,
+                    total_distance_km: 3.45,
+                    avg_speed_kmh: 18.3,
+                    duration_seconds: 678,
+                    surfaces: {
+                        'asphalt_good': 45,
+                        'asphalt_fair': 30,
+                        'asphalt_poor': 20,
+                        'cobblestone': 15,
+                        'gravel': 17
+                    }
+                },
+                route_points: route,
+                recent_damages: damages
+            };
+        }
+
+        // Toggle demo mode
+        async function toggleDemo() {
+            isDemoMode = !isDemoMode;
+            const demoToggle = document.getElementById('demo-toggle');
+            const statusBadge = document.getElementById('status-badge');
+            
+            // Update toggle switch appearance
+            if (isDemoMode) {
+                demoToggle.classList.add('active');
+                statusBadge.textContent = 'Demo';
+                statusBadge.className = 'status-badge status-demo';
+                if (!demoData) generateDemoData();
+                
+                // Disable start/stop buttons in demo mode
+                document.getElementById('btn-start').disabled = true;
+                document.getElementById('btn-stop').disabled = true;
+                
+                updateUI(); // Show demo data immediately
+            } else {
+                demoToggle.classList.remove('active');
+                statusBadge.textContent = 'Bereit';
+                statusBadge.className = 'status-badge status-ready';
+                
+                // Clear all map layers
+                routeLayer.clearLayers();
+                damageMarkers.forEach(m => map.removeLayer(m));
+                damageMarkers.length = 0;
+                
+                if (currentMarker) {
+                    map.removeLayer(currentMarker);
+                    currentMarker = null;
+                }
+                
+                // Reset statistics to zero
+                document.getElementById('session-id').textContent = '-';
+                document.getElementById('runtime').textContent = '00:00:00';
+                document.getElementById('stat-images').textContent = '0';
+                document.getElementById('stat-distance').textContent = '0.00 km';
+                document.getElementById('stat-speed').textContent = '0.0 km/h';
+                document.getElementById('current-surface').innerHTML = '';
+                document.getElementById('surface-list').innerHTML = '<div style="color: #999; text-align: center;">Noch keine Daten</div>';
+                
+                const damageList = document.getElementById('damage-list');
+                if (damageList) {
+                    damageList.innerHTML = '<div class="loading">Noch keine Schäden erkannt</div>';
+                }
+                
+                // Enable start button, disable stop button
+                document.getElementById('btn-start').disabled = false;
+                document.getElementById('btn-stop').disabled = true;
+                
+                // Get current GPS position and show marker
+                fetchCurrentGPSPosition();
+            }
+
+            try {
+                await fetch('/api/live/demo', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ demo: isDemoMode })
+                });
+            } catch (error) {
+                console.error('Error toggling demo:', error);
+            }
+        }
+
+        // Fetch current GPS position from backend
+        async function fetchCurrentGPSPosition() {
+            try {
+                const response = await fetch('/api/gps/current');
+                const data = await response.json();
+                
+                if (data.latitude && data.longitude) {
+                    // GPS available - show marker at current position
+                    const pos = [data.latitude, data.longitude];
+                    
+                    if (currentMarker) {
+                        currentMarker.setLatLng(pos);
+                    } else {
+                        currentMarker = L.marker(pos, {
+                            icon: L.divIcon({
+                                className: 'current-position',
+                                html: '<div style="background: #27ae60; width: 16px; height: 16px; border-radius: 50%; border: 3px solid white; box-shadow: 0 2px 8px rgba(0,0,0,0.3);"></div>',
+                                iconSize: [16, 16]
+                            })
+                        }).addTo(map);
+                    }
+                    
+                    // Center map on GPS position
+                    map.setView(pos, 15);
+                    console.log(`GPS Position: ${data.latitude}, ${data.longitude}`);
+                } else {
+                    // No GPS - stay in Ried bei Mering
+                    map.setView([48.2904, 11.0434], 15);
+                    console.log('Kein GPS-Empfang - bleibe in Ried bei Mering');
+                }
+            } catch (error) {
+                console.error('Error fetching GPS:', error);
+                // On error, stay in Ried
+                map.setView([48.2904, 11.0434], 15);
+            }
+        }
+
+        // Start live system
+        async function startLiveSystem() {
+            try {
+                const response = await fetch('/api/live/start', { method: 'POST' });
+                const data = await response.json();
+                
+                if (response.ok) {
+                    document.getElementById('status-badge').textContent = 'Läuft';
+                    document.getElementById('status-badge').className = 'status-badge status-running';
+                    document.getElementById('btn-start').disabled = true;
+                    document.getElementById('btn-stop').disabled = false;
+                } else {
+                    // Bessere Fehlermeldung
+                    if (data.error === 'already_running') {
+                        alert('System läuft bereits');
+                    } else {
+                        alert('Fehler beim Starten: ' + (data.error || 'Unbekannt'));
+                    }
+                }
+            } catch (error) {
+                console.error('Error starting:', error);
+                alert('Fehler beim Starten: ' + error.message);
+            }
+        }
+
+        // Stop live system
+        async function stopLiveSystem() {
+            try {
+                const response = await fetch('/api/live/stop', { method: 'POST' });
+                const data = await response.json();
+                
+                if (response.ok) {
+                    document.getElementById('status-badge').textContent = 'Gestoppt';
+                    document.getElementById('status-badge').className = 'status-badge status-ready';
+                    document.getElementById('btn-start').disabled = false;
+                    document.getElementById('btn-stop').disabled = true;
+                } else {
+                    // Bessere Fehlermeldung
+                    if (data.error === 'not_running') {
+                        alert('System läuft nicht - nichts zu stoppen');
+                    } else {
+                        alert('Fehler beim Stoppen: ' + (data.error || 'Unbekannt'));
+                    }
+                }
+            } catch (error) {
+                console.error('Error stopping:', error);
+                alert('Fehler beim Stoppen: ' + error.message);
+            }
+        }
+        
+        // Format time
+        function formatTime(seconds) {
+            const h = Math.floor(seconds / 3600);
+            const m = Math.floor((seconds % 3600) / 60);
+            const s = seconds % 60;
+            return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+        }
+        
+        // Update UI
+        async function updateUI() {
+            try {
+                let data;
+                
+                if (isDemoMode) {
+                    data = demoData;
+                } else {
+                    const response = await fetch('/api/live/status');
+                    data = await response.json();
+                    
+                    // Update status badge
+                    const statusBadge = document.getElementById('status-badge');
+                    if (data.is_running) {
+                        statusBadge.textContent = 'Läuft';
+                        statusBadge.className = 'status-badge status-running';
+                        document.getElementById('btn-start').disabled = true;
+                        document.getElementById('btn-stop').disabled = false;
+                    } else {
+                        statusBadge.textContent = 'Bereit';
+                        statusBadge.className = 'status-badge status-ready';
+                        document.getElementById('btn-start').disabled = false;
+                        document.getElementById('btn-stop').disabled = true;
+                    }
+                }
+                
+                // Update status indicator
+                const indicator = document.getElementById('status-indicator');
+                if (indicator) {
+                    indicator.className = 'status ' + (data.is_running ? 'active' : 'inactive');
+                }
+                
+                // Update session info
+                document.getElementById('session-id').textContent = data.session_id || '-';
+                document.getElementById('runtime').textContent = formatTime(data.stats.duration_seconds || 0);
+                
+                // Update statistics
+                document.getElementById('stat-images').textContent = data.stats.total_images || 0;
+                document.getElementById('stat-distance').textContent = (data.stats.total_distance_km || 0).toFixed(2) + ' km';
+                document.getElementById('stat-speed').textContent = (data.stats.avg_speed_kmh || 0).toFixed(1) + ' km/h';
+                
+                // Update current surface
+                const surfaceDiv = document.getElementById('current-surface');
+                if (data.current_surface) {
+                    surfaceDiv.innerHTML = `<div class="surface-badge">${SURFACE_NAMES[data.current_surface] || data.current_surface}</div>`;
+                }
+                
+                // Update surface list
+                const surfaceListDiv = document.getElementById('surface-list');
+                if (Object.keys(data.stats.surfaces || {}).length > 0) {
+                    surfaceListDiv.innerHTML = Object.entries(data.stats.surfaces)
+                        .map(([type, count]) => `
+                            <span class="surface-badge">${SURFACE_NAMES[type] || type}: ${count}</span>
+                        `).join('');
+                } else {
+                    surfaceListDiv.innerHTML = '<div style="color: #999; text-align: center;">Noch keine Daten</div>';
+                }
+                
+                // Update route with colored segments
+                if (data.route_points && data.route_points.length > 0) {
+                    updateRoute(data.route_points);
+                } else if (!isDemoMode && data.current_position && data.is_running) {
+                    // Show current position only if system is actually running
+                    const pos = Array.isArray(data.current_position) 
+                        ? data.current_position 
+                        : [data.current_position.latitude, data.current_position.longitude];
+                    
+                    if (!currentMarker) {
+                        currentMarker = L.marker(pos, {
+                            icon: L.divIcon({
+                                className: 'current-position',
+                                html: '<div style="background: #27ae60; width: 16px; height: 16px; border-radius: 50%; border: 3px solid white; box-shadow: 0 2px 8px rgba(0,0,0,0.3);"></div>',
+                                iconSize: [16, 16]
+                            })
+                        }).addTo(map);
+                    } else {
+                        currentMarker.setLatLng(pos);
+                    }
+                    
+                    map.setView(pos, 15);
+                }
+                
+                // Update damages
+                if (data.recent_damages && data.recent_damages.length > 0) {
+                    updateDamages(data.recent_damages);
+                }
+                
+            } catch (error) {
+                console.error('Update error:', error);
+            }
+        }
+        
+        // Update route on map with colored segments
+        function updateRoute(points) {
+            // Clear existing route
+            routeLayer.clearLayers();
+            
+            if (points.length < 2) return;
+            
+            // Draw colored segments based on surface type
+            for (let i = 0; i < points.length - 1; i++) {
+                const p1 = points[i];
+                const p2 = points[i + 1];
+                
+                const color = SURFACE_COLORS[p1.surface_type] || '#667eea';
+                
+                L.polyline([
+                    [p1.latitude, p1.longitude],
+                    [p2.latitude, p2.longitude]
+                ], {
+                    color: color,
+                    weight: 5,
+                    opacity: 0.8
+                }).addTo(routeLayer);
+            }
+            
+            // Update current position marker
+            const latest = points[points.length - 1];
+            
+            if (currentMarker) {
+                currentMarker.setLatLng([latest.latitude, latest.longitude]);
+            } else {
+                currentMarker = L.marker([latest.latitude, latest.longitude], {
+                    icon: L.divIcon({
+                        className: 'current-position',
+                        html: '<div style="background: #27ae60; width: 16px; height: 16px; border-radius: 50%; border: 3px solid white; box-shadow: 0 2px 8px rgba(0,0,0,0.3);"></div>',
+                        iconSize: [16, 16]
+                    })
+                }).addTo(map);
+            }
+            
+            // Center map on current position (only first time)
+            if (isDemoMode || points.length < 10) {
+                const bounds = L.latLngBounds(points.map(p => [p.latitude, p.longitude]));
+                map.fitBounds(bounds, { padding: [50, 50] });
+            } else {
+                map.setView([latest.latitude, latest.longitude], map.getZoom());
+            }
+        }
+        
+        // Update damages
+        function updateDamages(damages) {
+            const listDiv = document.getElementById('damage-list');
+            
+            if (damages.length === 0) {
+                listDiv.innerHTML = '<div class="loading">Noch keine Schäden erkannt</div>';
+                return;
+            }
+            
+            // Reverse to show newest first
+            const reversed = damages.slice().reverse();
+            
+            listDiv.innerHTML = reversed.slice(0, 20).map((damage, idx) => `
+                <div class="damage-item" onclick="zoomToDamage(${damage.latitude}, ${damage.longitude})">
+                    <div class="type">${DAMAGE_NAMES[damage.damage_type] || damage.damage_type}</div>
+                    <div class="info">
+                        Confidence: ${(damage.confidence * 100).toFixed(1)}% |
+                        ${damage.severity.toUpperCase()}
+                    </div>
+                    <div class="info" style="font-size: 0.75em;">
+                        ${new Date(damage.timestamp).toLocaleTimeString('de-DE')}
+                    </div>
+                </div>
+            `).join('');
+            
+            // Add markers to map
+            damages.forEach((damage, idx) => {
+                // Check if marker already exists
+                const existing = damageMarkers.find(m => 
+                    m.getLatLng().lat === damage.latitude && 
+                    m.getLatLng().lng === damage.longitude
+                );
+                
+                if (!existing) {
+                    const marker = L.circleMarker([damage.latitude, damage.longitude], {
+                        radius: 8,
+                        fillColor: damage.severity === 'high' ? '#e74c3c' : 
+                                  damage.severity === 'medium' ? '#f39c12' : '#f1c40f',
+                        color: '#fff',
+                        weight: 2,
+                        opacity: 1,
+                        fillOpacity: 0.8
+                    }).addTo(map);
+                    
+                    marker.bindPopup(`
+                        <b>${DAMAGE_NAMES[damage.damage_type] || damage.damage_type}</b><br>
+                        Confidence: ${(damage.confidence * 100).toFixed(1)}%<br>
+                        Schweregrad: ${damage.severity.toUpperCase()}
+                    `);
+                    
+                    damageMarkers.push(marker);
+                }
+            });
+        }
+        
+        // Zoom to damage
+        function zoomToDamage(lat, lon) {
+            map.setView([lat, lon], 18);
+        }
+
+        // Add map legend
+        const legend = L.control({ position: 'bottomright' });
+        legend.onAdd = function(map) {
+            const div = L.DomUtil.create('div', 'map-legend');
+            div.innerHTML = '<strong>Oberflächen-Typen</strong><br>';
+            for (const [key, name] of Object.entries(SURFACE_NAMES)) {
+                if (SURFACE_COLORS[key]) {
+                    div.innerHTML += `
+                        <div style="margin: 4px 0;">
+                            <span style="display:inline-block; width:20px; height:3px; background:${SURFACE_COLORS[key]}; margin-right:5px;"></span>
+                            <span style="font-size:11px;">${name}</span>
+                        </div>
+                    `;
+                }
+            }
+            return div;
+        };
+        legend.addTo(map);
+        
+        // Initialize demo data
+        // Generate demo data on load
+        generateDemoData();
+        
+        // Initial setup: Demo mode is ON by default
+        isDemoMode = true;
+        document.getElementById('btn-start').disabled = true;
+        document.getElementById('btn-stop').disabled = true;
+        
+        // Start updates
+        setInterval(updateUI, UPDATE_INTERVAL);
+        updateUI(); // Initial update
+    </script>
+</body>
+</html>

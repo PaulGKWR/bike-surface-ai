@@ -1,0 +1,28 @@
+# Configuration for Data Collection Mode
+# Used for capturing GPS + Camera images WITHOUT AI inference
+# Data will be used for training model on Windows PC
+
+# GPS-Konfiguration (Navilock 62756 u-blox NEO-M8U)
+gps:
+  port: "/dev/ttyACM0"  # u-blox 8 GPS Empfänger
+  baudrate: 9600
+  timeout: 1.0
+
+camera:
+  device_id: 0  # /dev/video0 - Logitech HD Pro C920
+  resolution: [1920, 1080]  # Full HD für Training
+  fps: 10  # 10 FPS für gute Abdeckung
+
+collection:
+  capture_interval: 2.0  # Capture image every X seconds
+  image_quality: 95  # JPEG quality (0-100)
+  metadata_save_interval: 10  # Save metadata every X frames
+
+storage:
+  output_dir: "data_collection"  # Base directory for captured data
+  
+logging:
+  level: "INFO"
+  file: "data_collection.log"
+  max_bytes: 10485760  # 10MB
+  backup_count: 3

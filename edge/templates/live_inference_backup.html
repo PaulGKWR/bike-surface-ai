@@ -1,0 +1,482 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bike Surface AI - Live Inference</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: #1a1a1a;
+            color: #fff;
+            overflow: hidden;
+        }
+        
+        .container {
+            display: grid;
+            grid-template-rows: auto 1fr;
+            height: 100vh;
+        }
+        
+        /* Header */
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            padding: 15px 20px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.3);
+        }
+        
+        .header h1 {
+            font-size: 1.5em;
+            margin-bottom: 5px;
+        }
+        
+        .header .session-info {
+            font-size: 0.9em;
+            opacity: 0.9;
+        }
+        
+        /* Main Content */
+        .main-content {
+            display: grid;
+            grid-template-columns: 1fr 400px;
+            gap: 0;
+            overflow: hidden;
+        }
+        
+        /* Map */
+        #map {
+            height: 100%;
+            width: 100%;
+        }
+        
+        /* Sidebar */
+        .sidebar {
+            background: #2c2c2c;
+            overflow-y: auto;
+            padding: 20px;
+        }
+        
+        .stat-card {
+            background: #3c3c3c;
+            border-radius: 10px;
+            padding: 15px;
+            margin-bottom: 15px;
+        }
+        
+        .stat-card h3 {
+            color: #667eea;
+            margin-bottom: 10px;
+            font-size: 1.1em;
+        }
+        
+        .stat-row {
+            display: flex;
+            justify-content: space-between;
+            padding: 8px 0;
+            border-bottom: 1px solid #4c4c4c;
+        }
+        
+        .stat-row:last-child {
+            border-bottom: none;
+        }
+        
+        .stat-label {
+            color: #999;
+        }
+        
+        .stat-value {
+            color: #fff;
+            font-weight: bold;
+        }
+        
+        .surface-badge, .damage-badge {
+            display: inline-block;
+            padding: 4px 10px;
+            border-radius: 12px;
+            font-size: 0.85em;
+            margin: 3px;
+        }
+        
+        .surface-badge {
+            background: #27ae60;
+        }
+        
+        .damage-badge {
+            background: #e74c3c;
+        }
+        
+        /* Recent Damages */
+        .damage-list {
+            max-height: 400px;
+            overflow-y: auto;
+        }
+        
+        .damage-item {
+            background: #4c4c4c;
+            border-radius: 8px;
+            padding: 12px;
+            margin-bottom: 10px;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+        
+        .damage-item:hover {
+            background: #5c5c5c;
+        }
+        
+        .damage-item .type {
+            color: #e74c3c;
+            font-weight: bold;
+            margin-bottom: 5px;
+        }
+        
+        .damage-item .info {
+            font-size: 0.85em;
+            color: #999;
+        }
+        
+        /* Status Indicator */
+        .status {
+            display: inline-block;
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            margin-right: 8px;
+            animation: pulse 2s infinite;
+        }
+        
+        .status.active {
+            background: #27ae60;
+        }
+        
+        .status.inactive {
+            background: #95a5a6;
+            animation: none;
+        }
+        
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+        
+        /* Loading */
+        .loading {
+            text-align: center;
+            padding: 40px;
+            color: #999;
+        }
+        
+        .loading-spinner {
+            border: 4px solid #3c3c3c;
+            border-top: 4px solid #667eea;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 15px;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <div class="header">
+            <h1>
+                <span class="status" id="status-indicator"></span>
+                🚴 Bike Surface AI - Live Inference
+            </h1>
+            <div class="session-info">
+                Session: <span id="session-id">-</span> | 
+                Laufzeit: <span id="runtime">00:00:00</span>
+            </div>
+        </div>
+        
+        <!-- Main Content -->
+        <div class="main-content">
+            <!-- Map -->
+            <div id="map"></div>
+            
+            <!-- Sidebar -->
+            <div class="sidebar">
+                <!-- Statistics -->
+                <div class="stat-card">
+                    <h3>📊 Statistik</h3>
+                    <div class="stat-row">
+                        <span class="stat-label">Bilder:</span>
+                        <span class="stat-value" id="stat-images">0</span>
+                    </div>
+                    <div class="stat-row">
+                        <span class="stat-label">Distanz:</span>
+                        <span class="stat-value" id="stat-distance">0.00 km</span>
+                    </div>
+                    <div class="stat-row">
+                        <span class="stat-label">Geschwindigkeit:</span>
+                        <span class="stat-value" id="stat-speed">0.0 km/h</span>
+                    </div>
+                </div>
+                
+                <!-- Current Surface -->
+                <div class="stat-card">
+                    <h3>🛣️ Aktuelle Oberfläche</h3>
+                    <div id="current-surface" style="text-align: center; padding: 10px;">
+                        <div class="loading">
+                            <div class="loading-spinner"></div>
+                            Warte auf Daten...
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Detected Surfaces -->
+                <div class="stat-card">
+                    <h3>📋 Erkannte Oberflächen</h3>
+                    <div id="surface-list"></div>
+                </div>
+                
+                <!-- Recent Damages -->
+                <div class="stat-card">
+                    <h3>⚠️ Letzte Schäden</h3>
+                    <div class="damage-list" id="damage-list">
+                        <div class="loading">
+                            <div class="loading-spinner"></div>
+                            Warte auf Schäden...
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script>
+        // Initialize map - Start with Ried bei Mering (86510 Aichach-Friedberg)
+        const map = L.map('map').setView([48.2904, 11.0434], 15);
+        
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            attribution: '© OpenStreetMap contributors',
+            maxZoom: 19
+        }).addTo(map);
+        
+        // Layers
+        let routeLayer = null;
+        let currentMarker = null;
+        const damageMarkers = [];
+        
+        // Update interval
+        const UPDATE_INTERVAL = 2000; // 2 seconds
+        
+        // Damage type translations
+        const DAMAGE_NAMES = {
+            'pothole': 'Schlagloch',
+            'crack_longitudinal': 'Längsriss',
+            'crack_transverse': 'Querriss',
+            'crack_alligator': 'Netzriss',
+            'patch': 'Flickstelle',
+            'bump': 'Bodenwelle',
+            'depression': 'Absenkung',
+            'edge_damage': 'Randschaden'
+        };
+        
+        const SURFACE_NAMES = {
+            'asphalt_excellent': 'Asphalt (Exzellent)',
+            'asphalt_good': 'Asphalt (Gut)',
+            'asphalt_fair': 'Asphalt (Akzeptabel)',
+            'asphalt_poor': 'Asphalt (Schlecht)',
+            'concrete': 'Beton',
+            'cobblestone': 'Kopfsteinpflaster',
+            'paving_stones': 'Pflastersteine',
+            'gravel': 'Schotter',
+            'dirt': 'Unbefestigt'
+        };
+        
+        // Format time
+        function formatTime(seconds) {
+            const h = Math.floor(seconds / 3600);
+            const m = Math.floor((seconds % 3600) / 60);
+            const s = seconds % 60;
+            return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+        }
+        
+        // Update UI
+        async function updateUI() {
+            try {
+                // Fetch status
+                const response = await fetch('/api/live/status');
+                const data = await response.json();
+                
+                // Update status indicator
+                const indicator = document.getElementById('status-indicator');
+                indicator.className = 'status ' + (data.is_running ? 'active' : 'inactive');
+                
+                // Update session info
+                document.getElementById('session-id').textContent = data.session_id || '-';
+                document.getElementById('runtime').textContent = formatTime(data.stats.duration_seconds || 0);
+                
+                // Update statistics
+                document.getElementById('stat-images').textContent = data.stats.total_images || 0;
+                document.getElementById('stat-distance').textContent = (data.stats.total_distance_km || 0).toFixed(2) + ' km';
+                document.getElementById('stat-speed').textContent = (data.stats.avg_speed_kmh || 0).toFixed(1) + ' km/h';
+                
+                // Update current surface
+                const surfaceDiv = document.getElementById('current-surface');
+                if (data.current_surface) {
+                    surfaceDiv.innerHTML = `<div class="surface-badge">${SURFACE_NAMES[data.current_surface] || data.current_surface}</div>`;
+                }
+                
+                // Update surface list
+                const surfaceListDiv = document.getElementById('surface-list');
+                if (Object.keys(data.stats.surfaces || {}).length > 0) {
+                    surfaceListDiv.innerHTML = Object.entries(data.stats.surfaces)
+                        .map(([type, count]) => `
+                            <span class="surface-badge">${SURFACE_NAMES[type] || type}: ${count}</span>
+                        `).join('');
+                } else {
+                    surfaceListDiv.innerHTML = '<div style="color: #999; text-align: center;">Noch keine Daten</div>';
+                }
+                
+                // Update route
+                if (data.route_points && data.route_points.length > 0) {
+                    updateRoute(data.route_points);
+                } else if (data.current_position) {
+                    // Show current position even without route
+                    const pos = Array.isArray(data.current_position) 
+                        ? data.current_position 
+                        : [data.current_position.latitude, data.current_position.longitude];
+                    
+                    if (!currentMarker) {
+                        currentMarker = L.marker(pos, {
+                            icon: L.divIcon({
+                                className: 'current-position',
+                                html: '<div style="background: #27ae60; width: 16px; height: 16px; border-radius: 50%; border: 3px solid white; box-shadow: 0 2px 8px rgba(0,0,0,0.3);"></div>',
+                                iconSize: [16, 16]
+                            })
+                        }).addTo(map);
+                    } else {
+                        currentMarker.setLatLng(pos);
+                    }
+                    
+                    map.setView(pos, 15);
+                }
+                
+                // Update damages
+                if (data.recent_damages && data.recent_damages.length > 0) {
+                    updateDamages(data.recent_damages);
+                }
+                
+            } catch (error) {
+                console.error('Update error:', error);
+            }
+        }
+        
+        // Update route on map
+        function updateRoute(points) {
+            const coords = points.map(p => [p.latitude, p.longitude]);
+            
+            if (routeLayer) {
+                map.removeLayer(routeLayer);
+            }
+            
+            routeLayer = L.polyline(coords, {
+                color: '#667eea',
+                weight: 4,
+                opacity: 0.8
+            }).addTo(map);
+            
+            // Update current position marker
+            if (coords.length > 0) {
+                const latest = coords[coords.length - 1];
+                
+                if (currentMarker) {
+                    currentMarker.setLatLng(latest);
+                } else {
+                    currentMarker = L.marker(latest, {
+                        icon: L.divIcon({
+                            className: 'current-position',
+                            html: '<div style="background: #27ae60; width: 16px; height: 16px; border-radius: 50%; border: 3px solid white; box-shadow: 0 2px 8px rgba(0,0,0,0.3);"></div>',
+                            iconSize: [16, 16]
+                        })
+                    }).addTo(map);
+                }
+                
+                // Center map on current position
+                map.setView(latest, map.getZoom());
+            }
+        }
+        
+        // Update damages
+        function updateDamages(damages) {
+            const listDiv = document.getElementById('damage-list');
+            
+            if (damages.length === 0) {
+                listDiv.innerHTML = '<div class="loading">Noch keine Schäden erkannt</div>';
+                return;
+            }
+            
+            // Reverse to show newest first
+            const reversed = damages.slice().reverse();
+            
+            listDiv.innerHTML = reversed.slice(0, 20).map((damage, idx) => `
+                <div class="damage-item" onclick="zoomToDamage(${damage.latitude}, ${damage.longitude})">
+                    <div class="type">${DAMAGE_NAMES[damage.damage_type] || damage.damage_type}</div>
+                    <div class="info">
+                        Confidence: ${(damage.confidence * 100).toFixed(1)}% |
+                        ${damage.severity.toUpperCase()}
+                    </div>
+                    <div class="info" style="font-size: 0.75em;">
+                        ${new Date(damage.timestamp).toLocaleTimeString('de-DE')}
+                    </div>
+                </div>
+            `).join('');
+            
+            // Add markers to map
+            damages.forEach((damage, idx) => {
+                // Check if marker already exists
+                const existing = damageMarkers.find(m => 
+                    m.getLatLng().lat === damage.latitude && 
+                    m.getLatLng().lng === damage.longitude
+                );
+                
+                if (!existing) {
+                    const marker = L.circleMarker([damage.latitude, damage.longitude], {
+                        radius: 8,
+                        fillColor: damage.severity === 'high' ? '#e74c3c' : 
+                                  damage.severity === 'medium' ? '#f39c12' : '#f1c40f',
+                        color: '#fff',
+                        weight: 2,
+                        opacity: 1,
+                        fillOpacity: 0.8
+                    }).addTo(map);
+                    
+                    marker.bindPopup(`
+                        <b>${DAMAGE_NAMES[damage.damage_type] || damage.damage_type}</b><br>
+                        Confidence: ${(damage.confidence * 100).toFixed(1)}%<br>
+                        Schweregrad: ${damage.severity.toUpperCase()}
+                    `);
+                    
+                    damageMarkers.push(marker);
+                }
+            });
+        }
+        
+        // Zoom to damage
+        function zoomToDamage(lat, lon) {
+            map.setView([lat, lon], 18);
+        }
+        
+        // Start updates
+        setInterval(updateUI, UPDATE_INTERVAL);
+        updateUI(); // Initial update
+    </script>
+</body>
+</html>

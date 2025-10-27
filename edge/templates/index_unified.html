@@ -1,0 +1,565 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bike Surface AI - Unified Dashboard</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: #1a1a1a;
+            color: #fff;
+            height: 100vh;
+            overflow: hidden;
+        }
+        
+        /* Header with Tabs */
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            padding: 15px 20px 0;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.3);
+        }
+        
+        .header h1 {
+            font-size: 1.5em;
+            margin-bottom: 10px;
+        }
+        
+        /* Tab Navigation */
+        .tabs {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 0;
+        }
+        
+        .tab {
+            padding: 10px 25px;
+            background: rgba(255,255,255,0.1);
+            border: none;
+            border-radius: 8px 8px 0 0;
+            color: #fff;
+            cursor: pointer;
+            font-size: 1em;
+            transition: all 0.3s;
+        }
+        
+        .tab:hover {
+            background: rgba(255,255,255,0.2);
+        }
+        
+        .tab.active {
+            background: #2c2c2c;
+            font-weight: bold;
+        }
+        
+        /* Tab Content */
+        .tab-content {
+            display: none;
+            height: calc(100vh - 100px);
+        }
+        
+        .tab-content.active {
+            display: block;
+        }
+        
+        /* === TAB 1: Datensammlung === */
+        .collection-view {
+            display: grid;
+            grid-template-columns: 1fr 400px;
+            gap: 20px;
+            padding: 20px;
+            height: 100%;
+        }
+        
+        .video-container {
+            background: #2c2c2c;
+            border-radius: 10px;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+        }
+        
+        .video-container h2 {
+            margin-bottom: 15px;
+        }
+        
+        #video {
+            width: 100%;
+            border-radius: 8px;
+            background: #000;
+        }
+        
+        .collection-sidebar {
+            background: #2c2c2c;
+            border-radius: 10px;
+            padding: 20px;
+            overflow-y: auto;
+        }
+        
+        .control-buttons {
+            display: flex;
+            gap: 10px;
+            margin: 20px 0;
+        }
+        
+        .btn {
+            flex: 1;
+            padding: 15px;
+            border: none;
+            border-radius: 8px;
+            font-size: 1.1em;
+            font-weight: bold;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        
+        .btn-start {
+            background: #4CAF50;
+            color: white;
+        }
+        
+        .btn-start:hover:not(:disabled) {
+            background: #45a049;
+        }
+        
+        .btn-stop {
+            background: #f44336;
+            color: white;
+        }
+        
+        .btn-stop:hover:not(:disabled) {
+            background: #da190b;
+        }
+        
+        .btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+        
+        .info-card {
+            background: #1a1a1a;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 15px;
+        }
+        
+        .info-card h3 {
+            margin-bottom: 10px;
+            color: #667eea;
+        }
+        
+        .info-row {
+            display: flex;
+            justify-content: space-between;
+            padding: 8px 0;
+            border-bottom: 1px solid #3a3a3a;
+        }
+        
+        .info-row:last-child {
+            border-bottom: none;
+        }
+        
+        /* === TAB 2: Live Inference === */
+        .inference-view {
+            display: grid;
+            grid-template-columns: 1fr 400px;
+            height: 100%;
+        }
+        
+        #map {
+            height: 100%;
+            width: 100%;
+        }
+        
+        .inference-sidebar {
+            background: #2c2c2c;
+            overflow-y: auto;
+            padding: 20px;
+        }
+        
+        .inference-controls {
+            margin-bottom: 20px;
+        }
+        
+        .status-badge {
+            display: inline-block;
+            padding: 8px 16px;
+            border-radius: 20px;
+            font-weight: bold;
+            margin-bottom: 15px;
+        }
+        
+        .status-running {
+            background: #4CAF50;
+            color: white;
+        }
+        
+        .status-stopped {
+            background: #666;
+            color: white;
+        }
+        
+        .stats-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+            margin-top: 15px;
+        }
+        
+        .stat-box {
+            background: #1a1a1a;
+            padding: 15px;
+            border-radius: 8px;
+            text-align: center;
+        }
+        
+        .stat-value {
+            font-size: 1.8em;
+            font-weight: bold;
+            color: #667eea;
+        }
+        
+        .stat-label {
+            font-size: 0.9em;
+            color: #999;
+            margin-top: 5px;
+        }
+        
+        .damage-list {
+            margin-top: 20px;
+        }
+        
+        .damage-item {
+            background: #1a1a1a;
+            padding: 12px;
+            border-radius: 8px;
+            margin-bottom: 10px;
+            border-left: 4px solid #f44336;
+        }
+        
+        .damage-type {
+            font-weight: bold;
+            color: #f44336;
+        }
+        
+        .damage-confidence {
+            color: #999;
+            font-size: 0.9em;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>🚴 Bike Surface AI</h1>
+        <div class="tabs">
+            <button class="tab active" onclick="switchTab('collection')">
+                📸 Trainings-Datensammlung
+            </button>
+            <button class="tab" onclick="switchTab('inference')">
+                🤖 Live Inference
+            </button>
+        </div>
+    </div>
+    
+    <!-- TAB 1: Datensammlung -->
+    <div id="tab-collection" class="tab-content active">
+        <div class="collection-view">
+            <div class="video-container">
+                <h2>📹 Kamera-Stream</h2>
+                <img id="video" src="{{ url_for('video_feed') }}" alt="Video Stream">
+            </div>
+            
+            <div class="collection-sidebar">
+                <div class="control-buttons">
+                    <button id="btn-start" class="btn btn-start" onclick="startCollection()">
+                        ▶️ Start
+                    </button>
+                    <button id="btn-stop" class="btn btn-stop" onclick="stopCollection()" disabled>
+                        ⏹️ Stop
+                    </button>
+                </div>
+                
+                <div class="info-card">
+                    <h3>🛰️ GPS-Position</h3>
+                    <div id="gps-info">
+                        <div class="info-row">
+                            <span>Latitude:</span>
+                            <span id="gps-lat">--</span>
+                        </div>
+                        <div class="info-row">
+                            <span>Longitude:</span>
+                            <span id="gps-lon">--</span>
+                        </div>
+                        <div class="info-row">
+                            <span>Speed:</span>
+                            <span id="gps-speed">--</span>
+                        </div>
+                        <div class="info-row">
+                            <span>Fix:</span>
+                            <span id="gps-fix">--</span>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="info-card">
+                    <h3>📊 Session-Info</h3>
+                    <div id="session-info">
+                        <div class="info-row">
+                            <span>Status:</span>
+                            <span id="session-status">Bereit</span>
+                        </div>
+                        <div class="info-row">
+                            <span>Session ID:</span>
+                            <span id="session-id">--</span>
+                        </div>
+                        <div class="info-row">
+                            <span>Bilder:</span>
+                            <span id="session-images">0</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- TAB 2: Live Inference -->
+    <div id="tab-inference" class="tab-content">
+        <div class="inference-view">
+            <div id="map"></div>
+            
+            <div class="inference-sidebar">
+                <div class="inference-controls">
+                    <h2>🤖 Live System</h2>
+                    <div class="status-badge status-stopped" id="live-status-badge">
+                        System gestoppt
+                    </div>
+                    
+                    <div class="control-buttons">
+                        <button class="btn btn-start" onclick="startLiveSystem()">
+                            ▶️ Start Live System
+                        </button>
+                        <button class="btn btn-stop" onclick="stopLiveSystem()">
+                            ⏹️ Stop
+                        </button>
+                    </div>
+                </div>
+                
+                <div class="info-card">
+                    <h3>📊 Statistiken</h3>
+                    <div class="stats-grid">
+                        <div class="stat-box">
+                            <div class="stat-value" id="stat-distance">0.0</div>
+                            <div class="stat-label">km</div>
+                        </div>
+                        <div class="stat-box">
+                            <div class="stat-value" id="stat-speed">0.0</div>
+                            <div class="stat-label">km/h</div>
+                        </div>
+                        <div class="stat-box">
+                            <div class="stat-value" id="stat-images">0</div>
+                            <div class="stat-label">Bilder</div>
+                        </div>
+                        <div class="stat-box">
+                            <div class="stat-value" id="stat-damages">0</div>
+                            <div class="stat-label">Schäden</div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="info-card">
+                    <h3>🛣️ Aktuelle Oberfläche</h3>
+                    <div id="current-surface" style="font-size: 1.2em; padding: 10px;">
+                        Warten auf Daten...
+                    </div>
+                </div>
+                
+                <div class="damage-list">
+                    <h3>⚠️ Erkannte Schäden</h3>
+                    <div id="damages-container">
+                        <p style="color: #999; padding: 10px;">Keine Schäden erkannt</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script>
+        // ===== TAB SWITCHING =====
+        function switchTab(tabName) {
+            // Hide all tabs
+            document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+            document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+            
+            // Show selected tab
+            document.getElementById(`tab-${tabName}`).classList.add('active');
+            event.target.classList.add('active');
+            
+            // Initialize map when switching to inference tab
+            if (tabName === 'inference' && !window.mapInitialized) {
+                initMap();
+            }
+        }
+        
+        // ===== TAB 1: DATENSAMMLUNG =====
+        
+        // Update GPS data
+        function updateGPS() {
+            fetch('/api/gps')
+                .then(r => r.json())
+                .then(data => {
+                    document.getElementById('gps-lat').textContent = data.latitude.toFixed(6);
+                    document.getElementById('gps-lon').textContent = data.longitude.toFixed(6);
+                    document.getElementById('gps-speed').textContent = data.speed.toFixed(1) + ' km/h';
+                    document.getElementById('gps-fix').textContent = data.has_fix ? '✓ GPS Fix' : '⚠️ Kein Fix';
+                });
+        }
+        
+        // Update collection status
+        function updateCollectionStatus() {
+            fetch('/api/collection/status')
+                .then(r => r.json())
+                .then(data => {
+                    if (data.is_recording) {
+                        document.getElementById('session-status').textContent = '🔴 Aufnahme läuft';
+                        document.getElementById('session-id').textContent = data.session.id;
+                        document.getElementById('session-images').textContent = data.session.image_count;
+                        document.getElementById('btn-start').disabled = true;
+                        document.getElementById('btn-stop').disabled = false;
+                    } else {
+                        document.getElementById('session-status').textContent = 'Bereit';
+                        document.getElementById('session-id').textContent = '--';
+                        document.getElementById('btn-start').disabled = false;
+                        document.getElementById('btn-stop').disabled = true;
+                    }
+                });
+        }
+        
+        function startCollection() {
+            fetch('/api/collection/start', { method: 'POST' })
+                .then(r => r.json())
+                .then(data => {
+                    console.log('Collection started:', data);
+                    updateCollectionStatus();
+                });
+        }
+        
+        function stopCollection() {
+            fetch('/api/collection/stop', { method: 'POST' })
+                .then(r => r.json())
+                .then(data => {
+                    console.log('Collection stopped:', data);
+                    updateCollectionStatus();
+                });
+        }
+        
+        // Update every 2 seconds
+        setInterval(updateGPS, 2000);
+        setInterval(updateCollectionStatus, 1000);
+        updateGPS();
+        updateCollectionStatus();
+        
+        // ===== TAB 2: LIVE INFERENCE =====
+        
+        let map;
+        let positionMarker;
+        let routeLine;
+        let damageMarkers = [];
+        window.mapInitialized = false;
+        
+        function initMap() {
+            if (window.mapInitialized) return;
+            
+            // Initialize map centered on Ried bei Mering (86510)
+            map = L.map('map').setView([48.2904, 11.0434], 15);
+            
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                attribution: '© OpenStreetMap contributors',
+                maxZoom: 19
+            }).addTo(map);
+            
+            // Position marker (green)
+            const greenIcon = L.icon({
+                iconUrl: 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyNSIgaGVpZ2h0PSI0MSI+PGcgZmlsbD0ibm9uZSIgZmlsbC1ydWxlPSJldmVub2RkIj48cGF0aCBmaWxsPSIjNENBRjUwIiBkPSJNMTIuNSAwQzUuNTk2IDAgMCA1LjU5NiAwIDEyLjVjMCA5LjM3NSAxMi41IDI4LjUgMTIuNSAyOC41czEyLjUtMTkuMTI1IDEyLjUtMjguNUMyNSA1LjU5NiAxOS40MDQgMCAxMi41IDB6Ii8+PGNpcmNsZSBjeD0iMTIuNSIgY3k9IjEyLjUiIHI9IjYiIGZpbGw9IiNGRkYiLz48L2c+PC9zdmc+',
+                iconSize: [25, 41],
+                iconAnchor: [12, 41],
+                popupAnchor: [1, -34]
+            });
+            
+            positionMarker = L.marker([48.2904, 11.0434], { icon: greenIcon })
+                .addTo(map)
+                .bindPopup('Aktuelle Position');
+            
+            window.mapInitialized = true;
+        }
+        
+        function updateLiveStatus() {
+            fetch('/api/live/status')
+                .then(r => r.json())
+                .then(data => {
+                    // Update badge
+                    const badge = document.getElementById('live-status-badge');
+                    if (data.is_running) {
+                        badge.textContent = '🟢 System läuft';
+                        badge.className = 'status-badge status-running';
+                    } else {
+                        badge.textContent = 'System gestoppt';
+                        badge.className = 'status-badge status-stopped';
+                    }
+                    
+                    // Update stats
+                    const stats = data.stats || {};
+                    document.getElementById('stat-distance').textContent = (stats.total_distance_km || 0).toFixed(2);
+                    document.getElementById('stat-speed').textContent = (stats.avg_speed_kmh || 0).toFixed(1);
+                    document.getElementById('stat-images').textContent = stats.total_images || 0;
+                    
+                    const totalDamages = Object.values(stats.damages || {}).reduce((a, b) => a + b, 0);
+                    document.getElementById('stat-damages').textContent = totalDamages;
+                    
+                    // Update surface
+                    document.getElementById('current-surface').textContent = 
+                        data.current_surface || 'Warten auf Daten...';
+                    
+                    // Update position marker
+                    if (data.current_position && window.mapInitialized) {
+                        const pos = data.current_position;
+                        positionMarker.setLatLng([pos[0], pos[1]]);
+                        map.setView([pos[0], pos[1]], map.getZoom());
+                    }
+                    
+                    // Update damages list
+                    const damagesContainer = document.getElementById('damages-container');
+                    if (data.recent_damages && data.recent_damages.length > 0) {
+                        damagesContainer.innerHTML = data.recent_damages.slice(0, 10).map(d => `
+                            <div class="damage-item">
+                                <div class="damage-type">${d.type}</div>
+                                <div class="damage-confidence">Konfidenz: ${(d.confidence * 100).toFixed(0)}%</div>
+                            </div>
+                        `).join('');
+                    } else {
+                        damagesContainer.innerHTML = '<p style="color: #999; padding: 10px;">Keine Schäden erkannt</p>';
+                    }
+                });
+        }
+        
+        function startLiveSystem() {
+            alert('Bitte starte das Live-System über den Desktop-Icon "Bike AI - Live System"');
+        }
+        
+        function stopLiveSystem() {
+            alert('Bitte beende das Live-System im Terminal (Strg+C)');
+        }
+        
+        // Update live data every 2 seconds
+        setInterval(updateLiveStatus, 2000);
+        updateLiveStatus();
+    </script>
+</body>
+</html>

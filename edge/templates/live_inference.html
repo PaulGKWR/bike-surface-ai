@@ -379,6 +379,7 @@
     <div class="navbar">
         <a href="/">📸 Trainings-Datensammlung</a>
         <a href="/live" class="active">🤖 Live Inference</a>
+        <a href="/routes">🗺️ Gefahrene Routen</a>
     </div>
 
     <div class="container">
@@ -536,76 +537,122 @@
         };
         
         const SURFACE_NAMES = {
-            'asphalt_excellent': 'Asphalt (Exzellent)',
-            'asphalt_good': 'Asphalt (Gut)',
-            'asphalt_fair': 'Asphalt (Akzeptabel)',
-            'asphalt_poor': 'Asphalt (Schlecht)',
-            'concrete': 'Beton',
+            'asphalt': 'Asphalt',
             'cobblestone': 'Kopfsteinpflaster',
-            'paving_stones': 'Pflastersteine',
-            'gravel': 'Schotter',
-            'dirt': 'Unbefestigt'
+            'unpaved': 'Schotter/Unbefestigt'
         };
 
         const SURFACE_COLORS = {
-            'asphalt_excellent': '#00ff00',
-            'asphalt_good': '#7fff00',
-            'asphalt_fair': '#ffff00',
-            'asphalt_poor': '#ff8800',
-            'concrete': '#00ffff',
-            'cobblestone': '#0000ff',
-            'paving_stones': '#8888ff',
-            'gravel': '#ff4400',
-            'dirt': '#8b4513'
+            'asphalt': '#667eea',      // Blau
+            'cobblestone': '#95a5a6',  // Grau
+            'unpaved': '#2c3e50'       // Schwarz
         };
 
         // Generate demo data
-        function generateDemoData() {
-            const center = { lat: 48.2904, lon: 11.0434 };
-            const radius = 0.01;
-            const points = 50;
-            const route = [];
-            const surfaceTypes = ['asphalt_good', 'asphalt_fair', 'asphalt_poor', 'cobblestone', 'gravel'];
-            
-            for (let i = 0; i < points; i++) {
-                const angle = (i / points) * 2 * Math.PI;
-                const lat = center.lat + radius * Math.cos(angle);
-                const lon = center.lon + radius * Math.sin(angle);
-                const surface = surfaceTypes[Math.floor(Math.random() * surfaceTypes.length)];
+        async function generateDemoData() {
+            try {
+                // Load GPX route from API
+                const response = await fetch('/api/demo/gpx-route');
+                const gpxData = await response.json();
                 
-                route.push({
-                    latitude: lat,
-                    longitude: lon,
-                    surface_type: surface
-                });
-            }
+                demoData = {
+                    session_id: 'Demo: ' + gpxData.route_name,
+                    is_running: false,
+                    current_surface: 'asphalt',
+                    stats: {
+                        total_images: gpxData.total_points,
+                        total_distance_km: parseFloat((gpxData.total_points * 0.015).toFixed(2)),  // ~15m per point, as number
+                        avg_speed_kmh: 18.5,
+                        duration_seconds: Math.round(gpxData.total_points * 2.5),
+                        surfaces: {
+                            'asphalt': Math.floor(gpxData.total_points * 0.6),
+                            'cobblestone': Math.floor(gpxData.total_points * 0.25),
+                            'unpaved': Math.floor(gpxData.total_points * 0.15)
+                        }
+                    },
+                    route_points: gpxData.route_points,
+                    recent_damages: gpxData.damages
+                };
+            } catch (error) {
+                console.error('Error loading GPX route:', error);
+                // Fallback to simple circular route
+                const center = { lat: 48.2904, lon: 11.0434 };
+                const radius = 0.01;
+                const points = 50;
+                const route = [];
+                const surfaceTypes = ['asphalt', 'cobblestone', 'unpaved'];
+                
+                for (let i = 0; i < points; i++) {
+                    const angle = (i / points) * 2 * Math.PI;
+                    const lat = center.lat + radius * Math.cos(angle);
+                    const lon = center.lon + radius * Math.sin(angle);
+                    const surface = surfaceTypes[Math.floor(Math.random() * surfaceTypes.length)];
+                    
+                    route.push({
+                        latitude: lat,
+                        longitude: lon,
+                        surface_type: surface
+                    });
+                }
 
-            const damages = [
-                { latitude: 48.291, longitude: 11.045, damage_type: 'pothole', severity: 'high', confidence: 0.92, timestamp: new Date().toISOString() },
-                { latitude: 48.289, longitude: 11.042, damage_type: 'crack_longitudinal', severity: 'medium', confidence: 0.85, timestamp: new Date().toISOString() },
-                { latitude: 48.292, longitude: 11.041, damage_type: 'bump', severity: 'low', confidence: 0.78, timestamp: new Date().toISOString() }
-            ];
-
-            demoData = {
-                session_id: 'Demo-Session',
-                is_running: false,
-                current_surface: 'asphalt_good',
-                stats: {
-                    total_images: 127,
-                    total_distance_km: 3.45,
-                    avg_speed_kmh: 18.3,
-                    duration_seconds: 678,
-                    surfaces: {
-                        'asphalt_good': 45,
-                        'asphalt_fair': 30,
-                        'asphalt_poor': 20,
-                        'cobblestone': 15,
-                        'gravel': 17
+                const damages = [
+                    { 
+                        latitude: 48.291, 
+                        longitude: 11.045, 
+                        damage_type: 'pothole', 
+                        severity: 'high', 
+                        confidence: 0.92, 
+                        timestamp: new Date().toISOString(),
+                        image_path: '/damages/Schlagloch.jpg'
+                    },
+                    { 
+                        latitude: 48.289, 
+                        longitude: 11.042, 
+                        damage_type: 'crack_longitudinal', 
+                        severity: 'medium', 
+                        confidence: 0.85, 
+                        timestamp: new Date().toISOString(),
+                        image_path: '/damages/Risse.jpg'
+                    },
+                    { 
+                        latitude: 48.292, 
+                        longitude: 11.041, 
+                        damage_type: 'crack_transverse', 
+                        severity: 'medium', 
+                        confidence: 0.88, 
+                        timestamp: new Date().toISOString(),
+                        image_path: '/damages/Risse1.jpg'
+                    },
+                    { 
+                        latitude: 48.290, 
+                        longitude: 11.044, 
+                        damage_type: 'pothole', 
+                        severity: 'high', 
+                        confidence: 0.94, 
+                        timestamp: new Date().toISOString(),
+                        image_path: '/damages/Schlagloch 2.jpg'
                     }
-                },
-                route_points: route,
-                recent_damages: damages
-            };
+                ];
+
+                demoData = {
+                    session_id: 'Demo-Session',
+                    is_running: false,
+                    current_surface: 'asphalt',
+                    stats: {
+                        total_images: 127,
+                        total_distance_km: 3.45,
+                        avg_speed_kmh: 18.3,
+                        duration_seconds: 678,
+                        surfaces: {
+                            'asphalt': 62,
+                            'cobblestone': 28,
+                            'unpaved': 37
+                        }
+                    },
+                    route_points: route,
+                    recent_damages: damages
+                };
+            }
         }
 
         // Toggle demo mode
@@ -633,7 +680,7 @@
                 statusBadge.textContent = 'Demo';
                 statusBadge.className = 'status-badge status-demo';
                 systemModeEl.textContent = 'Demo';
-                if (!demoData) generateDemoData();
+                if (!demoData) await generateDemoData();
                 
                 // Disable start/stop buttons in demo mode
                 btnStart.disabled = true;
@@ -1053,7 +1100,15 @@
             
             if (points.length < 2) return;
             
-            // Draw colored segments based on surface type
+            // Step 1: Draw green baseline (wider) to mark traveled sections
+            const allCoords = points.map(p => [p.latitude, p.longitude]);
+            L.polyline(allCoords, {
+                color: '#27ae60',  // Green
+                weight: 20,
+                opacity: 0.5
+            }).addTo(routeLayer);
+            
+            // Step 2: Draw colored segments based on surface type on top
             for (let i = 0; i < points.length - 1; i++) {
                 const p1 = points[i];
                 const p2 = points[i + 1];
@@ -1065,8 +1120,8 @@
                     [p2.latitude, p2.longitude]
                 ], {
                     color: color,
-                    weight: 5,
-                    opacity: 0.8
+                    weight: 10,
+                    opacity: 0.9
                 }).addTo(routeLayer);
             }
             
@@ -1100,52 +1155,127 @@
             
             if (damages.length === 0) {
                 listDiv.innerHTML = '<div class="loading">Noch keine Schäden erkannt</div>';
+                // Clear all markers if no damages
+                damageMarkers.forEach(m => map.removeLayer(m));
+                damageMarkers = [];
                 return;
             }
             
             // Reverse to show newest first
             const reversed = damages.slice().reverse();
             
-            listDiv.innerHTML = reversed.slice(0, 20).map((damage, idx) => `
-                <div class="damage-item" onclick="zoomToDamage(${damage.latitude}, ${damage.longitude})">
-                    <div class="type">${DAMAGE_NAMES[damage.damage_type] || damage.damage_type}</div>
-                    <div class="info">
-                        Confidence: ${(damage.confidence * 100).toFixed(1)}% |
-                        ${damage.severity.toUpperCase()}
-                    </div>
-                    <div class="info" style="font-size: 0.75em;">
-                        ${new Date(damage.timestamp).toLocaleTimeString('de-DE')}
+            listDiv.innerHTML = reversed.slice(0, 20).map((damage, idx) => {
+                const imageUrl = damage.image_path ? damage.image_path : '/damages/Schlagloch.jpg';
+                const severityColor = damage.severity === 'high' ? '#e74c3c' : 
+                                     damage.severity === 'medium' ? '#f39c12' : '#f1c40f';
+                const severityLabel = damage.severity === 'high' ? 'HOCH' : 
+                                     damage.severity === 'medium' ? 'MITTEL' : 'NIEDRIG';
+                return `
+                <div class="damage-item" onclick="zoomToDamage(${damage.latitude}, ${damage.longitude})" style="display: flex; gap: 10px; align-items: center;">
+                    <img src="${imageUrl}" style="width: 60px; height: 60px; object-fit: cover; border-radius: 6px; flex-shrink: 0;" 
+                         onerror="this.style.display='none'">
+                    <div style="flex: 1;">
+                        <div class="type" style="color: ${severityColor}; font-weight: 600;">${DAMAGE_NAMES[damage.damage_type] || damage.damage_type}</div>
+                        <div class="info" style="font-size: 0.8em;">
+                            <span style="color: ${severityColor}; font-weight: 500;">${severityLabel}</span> | 
+                            ${(damage.confidence * 100).toFixed(0)}%
+                        </div>
+                        <div class="info" style="font-size: 0.75em; color: #999;">
+                            ${new Date(damage.timestamp).toLocaleString('de-DE', { 
+                                day: '2-digit', 
+                                month: '2-digit', 
+                                year: 'numeric',
+                                hour: '2-digit', 
+                                minute: '2-digit'
+                            })}
+                        </div>
                     </div>
                 </div>
-            `).join('');
+                `;
+            }).join('');
             
-            // Add markers to map
+            // Clear old markers
+            damageMarkers.forEach(m => map.removeLayer(m));
+            damageMarkers = [];
+            
+            // Add all current markers to map
             damages.forEach((damage, idx) => {
-                // Check if marker already exists
-                const existing = damageMarkers.find(m => 
-                    m.getLatLng().lat === damage.latitude && 
-                    m.getLatLng().lng === damage.longitude
-                );
+                const marker = L.circleMarker([damage.latitude, damage.longitude], {
+                    radius: 8,
+                    fillColor: damage.severity === 'high' ? '#e74c3c' : 
+                              damage.severity === 'medium' ? '#f39c12' : '#f1c40f',
+                    color: '#fff',
+                    weight: 2,
+                    opacity: 1,
+                    fillOpacity: 0.8
+                }).addTo(map);
                 
-                if (!existing) {
-                    const marker = L.circleMarker([damage.latitude, damage.longitude], {
-                        radius: 8,
-                        fillColor: damage.severity === 'high' ? '#e74c3c' : 
-                                  damage.severity === 'medium' ? '#f39c12' : '#f1c40f',
-                        color: '#fff',
-                        weight: 2,
-                        opacity: 1,
-                        fillOpacity: 0.8
-                    }).addTo(map);
-                    
-                    marker.bindPopup(`
-                        <b>${DAMAGE_NAMES[damage.damage_type] || damage.damage_type}</b><br>
-                        Confidence: ${(damage.confidence * 100).toFixed(1)}%<br>
-                        Schweregrad: ${damage.severity.toUpperCase()}
-                    `);
-                    
-                    damageMarkers.push(marker);
-                }
+                // Enhanced popup with image and GPS
+                const imageUrl = damage.image_path ? damage.image_path : '/damages/Schlagloch.jpg';
+                const popupContent = `
+                    <div style="max-width: 220px;">
+                        <img src="${imageUrl}" style="width: 100%; height: 120px; object-fit: cover; border-radius: 4px; margin-bottom: 8px;" 
+                             onerror="this.style.display='none'">
+                        <div style="font-weight: bold; font-size: 14px; margin-bottom: 6px;">
+                            ${DAMAGE_NAMES[damage.damage_type] || damage.damage_type}
+                        </div>
+                        <div style="font-size: 12px; color: #666; line-height: 1.4;">
+                            <div style="margin-bottom: 3px;">
+                                <strong>Confidence:</strong> ${(damage.confidence * 100).toFixed(1)}%
+                            </div>
+                            <div style="margin-bottom: 3px;">
+                                <strong>Schweregrad:</strong> <span style="color: ${
+                                    damage.severity === 'high' ? '#e74c3c' : 
+                                    damage.severity === 'medium' ? '#f39c12' : '#f1c40f'
+                                }; font-weight: bold;">${damage.severity.toUpperCase()}</span>
+                            </div>
+                            <div style="margin-bottom: 3px;">
+                                <strong>GPS:</strong> ${damage.latitude.toFixed(6)}, ${damage.longitude.toFixed(6)}
+                            </div>
+                            <div style="font-size: 10px; color: #999;">
+                                ${new Date(damage.timestamp).toLocaleString('de-DE')}
+                            </div>
+                        </div>
+                    </div>
+                `;
+                
+                marker.bindPopup(popupContent, { 
+                    maxWidth: 240,
+                    autoClose: false,
+                    closeOnClick: false
+                });
+                
+                // Hover functionality - show tooltip temporarily
+                marker.on('mouseover', function(e) {
+                    this.openPopup();
+                });
+                
+                marker.on('mouseout', function(e) {
+                    // Only close if it wasn't clicked (not permanently opened)
+                    if (!this._permanentlyOpen) {
+                        this.closePopup();
+                    }
+                });
+                
+                // Click functionality - toggle permanent state
+                marker.on('click', function(e) {
+                    if (this._permanentlyOpen) {
+                        this._permanentlyOpen = false;
+                        this.closePopup();
+                    } else {
+                        // Close all other permanently open popups
+                        damageMarkers.forEach(m => {
+                            if (m._permanentlyOpen) {
+                                m._permanentlyOpen = false;
+                                m.closePopup();
+                            }
+                        });
+                        this._permanentlyOpen = true;
+                        this.openPopup();
+                    }
+                });
+                
+                damageMarkers.push(marker);
             });
         }
         
@@ -1173,21 +1303,21 @@
         };
         legend.addTo(map);
         
-        // Initialize demo data
-        // Generate demo data on load
-        generateDemoData();
-        
-        // Initial setup: Get demo mode from server
-        fetch('/api/live/status')
-            .then(res => res.json())
-            .then(data => {
-                isDemoMode = data.demo_mode || false;
-                
-                // Update UI based on initial state
-                const demoToggle = document.getElementById('demo-toggle');
-                const statusBadge = document.getElementById('status-badge');
-                const systemModeEl = document.getElementById('system-mode');
-                const btnStart = document.getElementById('btn-start');
+        // Initialize demo data on load (async)
+        (async function() {
+            await generateDemoData();
+            
+            // Initial setup: Get demo mode from server
+            fetch('/api/live/status')
+                .then(res => res.json())
+                .then(data => {
+                    isDemoMode = data.demo_mode || false;
+                    
+                    // Update UI based on initial state
+                    const demoToggle = document.getElementById('demo-toggle');
+                    const statusBadge = document.getElementById('status-badge');
+                    const systemModeEl = document.getElementById('system-mode');
+                    const btnStart = document.getElementById('btn-start');
                 const btnStop = document.getElementById('btn-stop');
                 
                 if (isDemoMode) {
@@ -1217,6 +1347,7 @@
                 updateUI();
                 updateHardwareStatus();
             });
+        })(); // Execute async function immediately
         
         // Start updates
         setInterval(updateUI, UPDATE_INTERVAL);

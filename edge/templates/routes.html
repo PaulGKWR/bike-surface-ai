@@ -1,0 +1,755 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bike Surface AI - Gefahrene Routen</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: #1a1a1a;
+            color: #fff;
+            overflow: hidden;
+        }
+
+        /* Navigation */
+        .navbar {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            padding: 10px 20px;
+            display: flex;
+            gap: 15px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.3);
+        }
+
+        .navbar a {
+            text-decoration: none;
+            color: rgba(255,255,255,0.8);
+            padding: 8px 16px;
+            border-radius: 6px;
+            font-weight: 600;
+            transition: all 0.2s;
+        }
+
+        .navbar a:hover { background: rgba(255,255,255,0.2); color: white; }
+        .navbar a.active { background: rgba(255,255,255,0.3); color: white; }
+        
+        .container {
+            display: grid;
+            grid-template-rows: auto 1fr;
+            height: calc(100vh - 50px);
+        }
+        
+        /* Header */
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            padding: 15px 20px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.3);
+        }
+        
+        .header h1 {
+            font-size: 1.5em;
+        }
+        
+        .header .subtitle {
+            font-size: 0.9em;
+            opacity: 0.9;
+            margin-top: 5px;
+        }
+
+        /* Main layout */
+        .main {
+            display: grid;
+            grid-template-columns: 1fr 380px;
+            height: 100%;
+            overflow: hidden;
+        }
+
+        /* Map */
+        #map {
+            height: 100%;
+            width: 100%;
+        }
+
+        /* Right Rail */
+        .rail {
+            background: #2c2c2c;
+            overflow-y: auto;
+            box-shadow: -2px 0 10px rgba(0,0,0,0.3);
+            display: flex;
+            flex-direction: column;
+        }
+
+        .rail-header {
+            background: #3a3a3a;
+            padding: 15px;
+            border-bottom: 1px solid #444;
+            position: sticky;
+            top: 0;
+            z-index: 10;
+        }
+
+        .rail-header h2 {
+            font-size: 1.1em;
+            margin-bottom: 10px;
+        }
+
+        .search-box {
+            width: 100%;
+            padding: 8px 12px;
+            background: #2c2c2c;
+            border: 1px solid #555;
+            border-radius: 6px;
+            color: #fff;
+            font-size: 0.9em;
+        }
+
+        .search-box:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        /* Route Cards */
+        .routes-list {
+            padding: 10px;
+            flex: 1;
+        }
+
+        .route-card {
+            background: #3a3a3a;
+            border-radius: 8px;
+            padding: 12px;
+            margin-bottom: 10px;
+            cursor: pointer;
+            transition: all 0.2s;
+            border: 2px solid transparent;
+        }
+
+        .route-card:hover {
+            background: #444;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+        }
+
+        .route-card.active {
+            border-color: #667eea;
+            background: #444;
+        }
+
+        .route-preview {
+            width: 100%;
+            height: 100px;
+            object-fit: cover;
+            border-radius: 6px;
+            margin-bottom: 10px;
+        }
+
+        .route-card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 8px;
+        }
+
+        .route-name {
+            font-weight: 600;
+            font-size: 1em;
+            flex: 1;
+        }
+
+        .route-actions {
+            display: flex;
+            gap: 5px;
+        }
+
+        .action-btn {
+            background: rgba(255,255,255,0.1);
+            border: none;
+            color: white;
+            padding: 4px 8px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 0.85em;
+            transition: all 0.2s;
+        }
+
+        .action-btn:hover {
+            background: rgba(255,255,255,0.2);
+        }
+
+        .route-info {
+            font-size: 0.85em;
+            color: #aaa;
+            line-height: 1.4;
+        }
+
+        .route-stats {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 8px;
+            margin-top: 8px;
+        }
+
+        .stat-item {
+            background: #2c2c2c;
+            padding: 6px;
+            border-radius: 4px;
+            text-align: center;
+        }
+
+        .stat-value {
+            font-weight: bold;
+            font-size: 1em;
+            color: #667eea;
+        }
+
+        .stat-label {
+            font-size: 0.75em;
+            color: #999;
+        }
+
+        /* Loading state */
+        .loading {
+            text-align: center;
+            padding: 30px;
+            color: #999;
+        }
+
+        .loading::after {
+            content: '...';
+            animation: dots 1.5s steps(3, end) infinite;
+        }
+
+        @keyframes dots {
+            0%, 20% { content: '.'; }
+            40% { content: '..'; }
+            60%, 100% { content: '...'; }
+        }
+
+        /* Empty state */
+        .empty-state {
+            text-align: center;
+            padding: 40px 20px;
+            color: #999;
+        }
+
+        .empty-state-icon {
+            font-size: 3em;
+            margin-bottom: 15px;
+        }
+
+        /* Modal for rename/delete */
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.7);
+            z-index: 1000;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .modal.active {
+            display: flex;
+        }
+
+        .modal-content {
+            background: #2c2c2c;
+            padding: 25px;
+            border-radius: 12px;
+            max-width: 400px;
+            width: 90%;
+        }
+
+        .modal-header {
+            font-size: 1.2em;
+            font-weight: 600;
+            margin-bottom: 15px;
+        }
+
+        .modal-body {
+            margin-bottom: 20px;
+        }
+
+        .modal-input {
+            width: 100%;
+            padding: 10px;
+            background: #3a3a3a;
+            border: 1px solid #555;
+            border-radius: 6px;
+            color: #fff;
+            font-size: 1em;
+        }
+
+        .modal-input:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        .modal-actions {
+            display: flex;
+            gap: 10px;
+            justify-content: flex-end;
+        }
+
+        .modal-btn {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: 600;
+            transition: all 0.2s;
+        }
+
+        .modal-btn-cancel {
+            background: #555;
+            color: white;
+        }
+
+        .modal-btn-cancel:hover {
+            background: #666;
+        }
+
+        .modal-btn-confirm {
+            background: #667eea;
+            color: white;
+        }
+
+        .modal-btn-confirm:hover {
+            background: #5568d3;
+        }
+
+        .modal-btn-delete {
+            background: #e74c3c;
+            color: white;
+        }
+
+        .modal-btn-delete:hover {
+            background: #c0392b;
+        }
+    </style>
+</head>
+<body>
+    <!-- Navigation -->
+    <nav class="navbar">
+        <a href="/">📸 Trainings-Datensammlung</a>
+        <a href="/live">🤖 Live Inference</a>
+        <a href="/routes" class="active">🗺️ Gefahrene Routen</a>
+    </nav>
+
+    <!-- Container -->
+    <div class="container">
+        <!-- Header -->
+        <div class="header">
+            <h1>🗺️ Gefahrene Routen</h1>
+            <div class="subtitle">Gespeicherte Fahrten mit Oberflächen und Schäden</div>
+        </div>
+
+        <!-- Main -->
+        <div class="main">
+            <!-- Map -->
+            <div id="map"></div>
+
+            <!-- Right Rail -->
+            <div class="rail">
+                <div class="rail-header">
+                    <h2>Gespeicherte Routen</h2>
+                    <input type="text" class="search-box" id="search-box" placeholder="Suche nach Namen oder Datum...">
+                </div>
+
+                <div class="routes-list" id="routes-list">
+                    <div class="loading">Lade Routen</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Rename Modal -->
+    <div class="modal" id="rename-modal">
+        <div class="modal-content">
+            <div class="modal-header">Route umbenennen</div>
+            <div class="modal-body">
+                <input type="text" class="modal-input" id="rename-input" placeholder="Neuer Name">
+            </div>
+            <div class="modal-actions">
+                <button class="modal-btn modal-btn-cancel" onclick="closeRenameModal()">Abbrechen</button>
+                <button class="modal-btn modal-btn-confirm" onclick="confirmRename()">Umbenennen</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Delete Confirmation Modal -->
+    <div class="modal" id="delete-modal">
+        <div class="modal-content">
+            <div class="modal-header">Route löschen?</div>
+            <div class="modal-body">
+                Diese Aktion kann nicht rückgängig gemacht werden. Alle Bilder und Daten werden gelöscht.
+            </div>
+            <div class="modal-actions">
+                <button class="modal-btn modal-btn-cancel" onclick="closeDeleteModal()">Abbrechen</button>
+                <button class="modal-btn modal-btn-delete" onclick="confirmDelete()">Löschen</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Leaflet JS -->
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script>
+        // Map initialization
+        const map = L.map('map').setView([48.2904, 11.0434], 13);
+        
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            attribution: '© OpenStreetMap contributors',
+            maxZoom: 19
+        }).addTo(map);
+
+        // Map layers
+        const routeLayer = L.layerGroup().addTo(map);
+        let damageMarkers = [];
+
+        // Surface colors and names
+        const SURFACE_COLORS = {
+            'asphalt': '#667eea',      // Blau
+            'cobblestone': '#95a5a6',  // Grau
+            'unpaved': '#2c3e50'       // Schwarz
+        };
+
+        const SURFACE_NAMES = {
+            'asphalt': 'Asphalt',
+            'cobblestone': 'Kopfsteinpflaster',
+            'unpaved': 'Schotter/Unbefestigt'
+        };
+
+        const DAMAGE_NAMES = {
+            'pothole': 'Schlagloch',
+            'crack': 'Riss',
+            'bump': 'Unebenheit',
+            'depression': 'Senke',
+            'patch': 'Flickwerk',
+            'manhole': 'Kanaldeckel',
+            'debris': 'Hindernisse',
+            'edge_break': 'Randabbruch'
+        };
+
+        // State
+        let routes = [];
+        let activeRoute = null;
+        let renameTarget = null;
+        let deleteTarget = null;
+
+        // Load routes on page load
+        loadRoutes();
+
+        function loadRoutes() {
+            fetch('/api/sessions/list')
+                .then(res => res.json())
+                .then(data => {
+                    routes = data.sessions || [];
+                    renderRoutes(routes);
+                })
+                .catch(err => {
+                    console.error('Fehler beim Laden der Routen:', err);
+                    document.getElementById('routes-list').innerHTML = 
+                        '<div class="empty-state"><div class="empty-state-icon">⚠️</div>Fehler beim Laden</div>';
+                });
+        }
+
+        function renderRoutes(routesToRender) {
+            const listDiv = document.getElementById('routes-list');
+            
+            if (routesToRender.length === 0) {
+                listDiv.innerHTML = `
+                    <div class="empty-state">
+                        <div class="empty-state-icon">🗺️</div>
+                        <div>Noch keine Routen gespeichert</div>
+                    </div>
+                `;
+                return;
+            }
+
+            listDiv.innerHTML = routesToRender.map(route => `
+                <div class="route-card ${activeRoute === route.session_id ? 'active' : ''}" 
+                     onclick="loadRoute('${route.session_id}')">
+                    <img src="/routes/cyclist-4900032_1280.jpg" class="route-preview" alt="Route Preview">
+                    <div class="route-card-header">
+                        <div class="route-name">${route.route_name}</div>
+                        <div class="route-actions">
+                            <button class="action-btn" onclick="event.stopPropagation(); openRenameModal('${route.session_id}', '${route.route_name}')">
+                                ✏️
+                            </button>
+                            <button class="action-btn" onclick="event.stopPropagation(); openDeleteModal('${route.session_id}', '${route.route_name}')">
+                                🗑️
+                            </button>
+                        </div>
+                    </div>
+                    <div class="route-info">
+                        📅 ${new Date(route.created_at).toLocaleDateString('de-DE', {
+                            day: '2-digit',
+                            month: '2-digit',
+                            year: 'numeric',
+                            hour: '2-digit',
+                            minute: '2-digit'
+                        })}
+                    </div>
+                    <div class="route-stats">
+                        <div class="stat-item">
+                            <div class="stat-value">${route.distance_km} km</div>
+                            <div class="stat-label">Strecke</div>
+                        </div>
+                        <div class="stat-item">
+                            <div class="stat-value">${route.duration_minutes} min</div>
+                            <div class="stat-label">Dauer</div>
+                        </div>
+                        <div class="stat-item">
+                            <div class="stat-value">${route.damage_count}</div>
+                            <div class="stat-label">Schäden</div>
+                        </div>
+                        <div class="stat-item">
+                            <div class="stat-value">${route.total_images}</div>
+                            <div class="stat-label">Bilder</div>
+                        </div>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        function loadRoute(sessionId) {
+            activeRoute = sessionId;
+            renderRoutes(routes);
+
+            fetch(`/api/sessions/${sessionId}`)
+                .then(res => res.json())
+                .then(data => {
+                    displayRoute(data);
+                })
+                .catch(err => {
+                    console.error('Fehler beim Laden der Route:', err);
+                    alert('Fehler beim Laden der Route');
+                });
+        }
+
+        function displayRoute(routeData) {
+            // Clear map
+            routeLayer.clearLayers();
+            damageMarkers.forEach(m => map.removeLayer(m));
+            damageMarkers = [];
+
+            const points = routeData.route_points || [];
+            const damages = routeData.damages || [];
+
+            if (points.length < 2) return;
+
+            // Draw green baseline (wider to mark traveled route)
+            const allCoords = points.map(p => [p.latitude, p.longitude]);
+            L.polyline(allCoords, {
+                color: '#27ae60',
+                weight: 20,
+                opacity: 0.5
+            }).addTo(routeLayer);
+
+            // Draw colored segments
+            for (let i = 0; i < points.length - 1; i++) {
+                const p1 = points[i];
+                const p2 = points[i + 1];
+                
+                const color = SURFACE_COLORS[p1.surface_type] || '#667eea';
+                
+                L.polyline([
+                    [p1.latitude, p1.longitude],
+                    [p2.latitude, p2.longitude]
+                ], {
+                    color: color,
+                    weight: 10,
+                    opacity: 0.9
+                }).addTo(routeLayer);
+            }
+
+            // Add damage markers
+            damages.forEach(damage => {
+                const marker = L.circleMarker([damage.latitude, damage.longitude], {
+                    radius: 8,
+                    fillColor: damage.severity === 'high' ? '#e74c3c' : 
+                              damage.severity === 'medium' ? '#f39c12' : '#f1c40f',
+                    color: '#fff',
+                    weight: 2,
+                    opacity: 1,
+                    fillOpacity: 0.8
+                }).addTo(map);
+                
+                // Enhanced popup with image and GPS
+                const imageUrl = damage.image_path ? damage.image_path : '/damages/Schlagloch.jpg';
+                const popupContent = `
+                    <div style="max-width: 220px;">
+                        <img src="${imageUrl}" style="width: 100%; height: 120px; object-fit: cover; border-radius: 4px; margin-bottom: 8px;" 
+                             onerror="this.style.display='none'">
+                        <div style="font-weight: bold; font-size: 14px; margin-bottom: 6px;">
+                            ${DAMAGE_NAMES[damage.damage_type] || damage.damage_type}
+                        </div>
+                        <div style="font-size: 12px; color: #666; line-height: 1.4;">
+                            <div style="margin-bottom: 3px;">
+                                <strong>Confidence:</strong> ${(damage.confidence * 100).toFixed(1)}%
+                            </div>
+                            <div style="margin-bottom: 3px;">
+                                <strong>Schweregrad:</strong> <span style="color: ${
+                                    damage.severity === 'high' ? '#e74c3c' : 
+                                    damage.severity === 'medium' ? '#f39c12' : '#f1c40f'
+                                }; font-weight: bold;">${damage.severity.toUpperCase()}</span>
+                            </div>
+                            <div style="margin-bottom: 3px;">
+                                <strong>GPS:</strong> ${damage.latitude.toFixed(6)}, ${damage.longitude.toFixed(6)}
+                            </div>
+                            <div style="font-size: 10px; color: #999;">
+                                ${new Date(damage.timestamp).toLocaleString('de-DE')}
+                            </div>
+                        </div>
+                    </div>
+                `;
+                
+                marker.bindPopup(popupContent, { 
+                    maxWidth: 240,
+                    autoClose: false,
+                    closeOnClick: false
+                });
+                
+                // Hover functionality - show tooltip temporarily
+                marker.on('mouseover', function(e) {
+                    this.openPopup();
+                });
+                
+                marker.on('mouseout', function(e) {
+                    // Only close if it wasn't clicked (not permanently opened)
+                    if (!this._permanentlyOpen) {
+                        this.closePopup();
+                    }
+                });
+                
+                // Click functionality - toggle permanent state
+                marker.on('click', function(e) {
+                    if (this._permanentlyOpen) {
+                        this._permanentlyOpen = false;
+                        this.closePopup();
+                    } else {
+                        // Close all other permanently open popups
+                        damageMarkers.forEach(m => {
+                            if (m._permanentlyOpen) {
+                                m._permanentlyOpen = false;
+                                m.closePopup();
+                            }
+                        });
+                        this._permanentlyOpen = true;
+                        this.openPopup();
+                    }
+                });
+                
+                damageMarkers.push(marker);
+            });
+
+            // Fit map to route bounds
+            const bounds = L.latLngBounds(allCoords);
+            map.fitBounds(bounds, { padding: [50, 50] });
+        }
+
+        // Search functionality
+        document.getElementById('search-box').addEventListener('input', (e) => {
+            const query = e.target.value.toLowerCase();
+            const filtered = routes.filter(route => 
+                route.route_name.toLowerCase().includes(query) ||
+                route.session_id.includes(query) ||
+                new Date(route.created_at).toLocaleDateString('de-DE').includes(query)
+            );
+            renderRoutes(filtered);
+        });
+
+        // Rename Modal
+        function openRenameModal(sessionId, currentName) {
+            renameTarget = sessionId;
+            document.getElementById('rename-input').value = currentName;
+            document.getElementById('rename-modal').classList.add('active');
+        }
+
+        function closeRenameModal() {
+            document.getElementById('rename-modal').classList.remove('active');
+            renameTarget = null;
+        }
+
+        function confirmRename() {
+            const newName = document.getElementById('rename-input').value.trim();
+            if (!newName) {
+                alert('Bitte einen Namen eingeben');
+                return;
+            }
+
+            fetch('/api/sessions/rename', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    session_id: renameTarget,
+                    new_name: newName
+                })
+            })
+            .then(res => res.json())
+            .then(data => {
+                if (data.success) {
+                    closeRenameModal();
+                    loadRoutes();
+                } else {
+                    alert('Fehler beim Umbenennen: ' + data.message);
+                }
+            })
+            .catch(err => {
+                console.error('Fehler:', err);
+                alert('Fehler beim Umbenennen');
+            });
+        }
+
+        // Delete Modal
+        function openDeleteModal(sessionId, routeName) {
+            deleteTarget = sessionId;
+            document.getElementById('delete-modal').classList.add('active');
+        }
+
+        function closeDeleteModal() {
+            document.getElementById('delete-modal').classList.remove('active');
+            deleteTarget = null;
+        }
+
+        function confirmDelete() {
+            fetch('/api/sessions/delete', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    session_id: deleteTarget
+                })
+            })
+            .then(res => res.json())
+            .then(data => {
+                if (data.success) {
+                    closeDeleteModal();
+                    if (activeRoute === deleteTarget) {
+                        activeRoute = null;
+                        routeLayer.clearLayers();
+                        damageMarkers.forEach(m => map.removeLayer(m));
+                        damageMarkers = [];
+                    }
+                    loadRoutes();
+                } else {
+                    alert('Fehler beim Löschen: ' + data.message);
+                }
+            })
+            .catch(err => {
+                console.error('Fehler:', err);
+                alert('Fehler beim Löschen');
+            });
+        }
+    </script>
+</body>
+</html>

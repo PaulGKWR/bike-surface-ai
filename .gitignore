@@ -212,5 +212,6 @@ edge/inference_results/
 edge/live_sessions/
 edge/test_capture/
 edge/viewer_data/
+edge/static/demo_images/
 *.log
 live_state.json

@@ -4,7 +4,7 @@ Web-UI für Bike Surface AI - Flask Server
 Stabil und ohne GUI-Probleme
 """
 
-from flask import Flask, render_template, jsonify, request, Response
+from flask import Flask, render_template, jsonify, request, Response, send_from_directory
 import subprocess
 import json
 import time
@@ -384,6 +384,12 @@ def live_page():
     return render_template('live_inference.html')
 
 
+@app.route('/routes')
+def routes_page():
+    """Serve the saved routes page"""
+    return render_template('routes.html')
+
+
 @app.route('/api/live/start', methods=['POST'])
 def live_start():
     """Start auto_live_system.py as a subprocess"""
@@ -440,6 +446,81 @@ def live_demo_toggle():
         return jsonify({'error': 'missing demo param'}), 400
     demo_mode = bool(demo)
     return jsonify({'demo_mode': demo_mode})
+
+
+@app.route('/api/demo/gpx-route')
+def get_gpx_route():
+    """Load and parse GPX file for demo route"""
+    import xml.etree.ElementTree as ET
+    import random
+    
+    gpx_file = os.path.join(os.path.dirname(__file__), 'demo_route', 'Tour14.gpx')
+    
+    try:
+        tree = ET.parse(gpx_file)
+        root = tree.getroot()
+        
+        # Extract namespace
+        ns = {'gpx': 'http://www.topografix.com/GPX/1/1'}
+        
+        # Extract all track points
+        route_points = []
+        
+        for trkpt in root.findall('.//gpx:trkpt', ns):
+            lat = float(trkpt.get('lat'))
+            lon = float(trkpt.get('lon'))
+            
+            route_points.append({
+                'latitude': lat,
+                'longitude': lon,
+                'surface_type': 'asphalt'  # Will be assigned in segments
+            })
+        
+        # Assign surface types in realistic segments
+        # Most of route is asphalt, one section (~middle third) is unpaved/gravel
+        total_points = len(route_points)
+        gravel_start = int(total_points * 0.4)  # Start gravel section at 40%
+        gravel_end = int(total_points * 0.6)    # End at 60% (Sirchenried-AIC15 section)
+        
+        for i in range(len(route_points)):
+            if gravel_start <= i < gravel_end:
+                route_points[i]['surface_type'] = 'unpaved'  # Schotter/gravel section
+            else:
+                route_points[i]['surface_type'] = 'asphalt'  # Default asphalt
+        
+        # Generate some demo damages along the route
+        damages = []
+        damage_types = ['pothole', 'crack_longitudinal', 'crack_transverse']
+        severities = ['high', 'medium', 'low']
+        image_paths = ['/damages/Schlagloch.jpg', '/damages/Risse.jpg', 
+                      '/damages/Risse1.jpg', '/damages/Schlagloch 2.jpg']
+        
+        # Place damages at specific intervals
+        num_damages = min(6, len(route_points) // 100)  # ~6 damages
+        damage_indices = [i * (len(route_points) // (num_damages + 1)) for i in range(1, num_damages + 1)]
+        
+        for idx in damage_indices:
+            if idx < len(route_points):
+                point = route_points[idx]
+                damages.append({
+                    'latitude': point['latitude'],
+                    'longitude': point['longitude'],
+                    'damage_type': random.choice(damage_types),
+                    'severity': random.choice(severities),
+                    'confidence': round(random.uniform(0.75, 0.95), 2),
+                    'timestamp': '2025-10-27T12:00:00',
+                    'image_path': random.choice(image_paths)
+                })
+        
+        return jsonify({
+            'route_points': route_points,
+            'damages': damages,
+            'route_name': 'Rundwanderung Baindlkirch',
+            'total_points': len(route_points)
+        })
+        
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 
 @app.route('/api/gps/current')
@@ -631,6 +712,174 @@ def gps_last_known():
             'longitude': 11.0434,
             'satellites': 0
         })
+
+
+# ============================================
+# SAVED ROUTES API
+# ============================================
+
+@app.route('/api/sessions/list')
+def sessions_list():
+    """List all saved sessions/routes"""
+    try:
+        base_dir = Path(__file__).parent / "live_sessions"
+        
+        if not base_dir.exists():
+            return jsonify({'sessions': []})
+        
+        sessions = []
+        for session_dir in base_dir.iterdir():
+            if session_dir.is_dir():
+                stats_file = session_dir / "stats.json"
+                if stats_file.exists():
+                    try:
+                        with open(stats_file, 'r') as f:
+                            stats = json.load(f)
+                        
+                        # Extract summary info
+                        route_summary = stats.get('route_summary', {})
+                        sessions.append({
+                            'session_id': stats.get('session_id', session_dir.name),
+                            'route_name': stats.get('route_name', session_dir.name),
+                            'created_at': stats.get('created_at', stats.get('start_time', '')),
+                            'distance_km': route_summary.get('distance_km', 0),
+                            'duration_minutes': route_summary.get('duration_minutes', 0),
+                            'damage_count': route_summary.get('total_damages', 0),
+                            'total_images': stats.get('total_images', 0)
+                        })
+                    except Exception as e:
+                        print(f"Error loading session {session_dir.name}: {e}")
+                        continue
+        
+        # Sort by created_at descending (newest first)
+        sessions.sort(key=lambda x: x['created_at'], reverse=True)
+        
+        return jsonify({'sessions': sessions})
+    
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/sessions/<session_id>')
+def session_detail(session_id):
+    """Get detailed session data for display on map"""
+    try:
+        base_dir = Path(__file__).parent / "live_sessions"
+        session_dir = base_dir / session_id
+        stats_file = session_dir / "stats.json"
+        
+        if not stats_file.exists():
+            return jsonify({'error': 'Session not found'}), 404
+        
+        with open(stats_file, 'r') as f:
+            stats = json.load(f)
+        
+        return jsonify({
+            'session_id': session_id,
+            'route_name': stats.get('route_name', session_id),
+            'created_at': stats.get('created_at', ''),
+            'route_points': stats.get('route_points', []),
+            'damages': stats.get('damages', []),
+            'stats': stats.get('route_summary', {}),
+            'surface_breakdown': stats.get('surfaces', {})
+        })
+    
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/sessions/rename', methods=['POST'])
+def session_rename():
+    """Rename a saved route"""
+    try:
+        data = request.json
+        session_id = data.get('session_id')
+        new_name = data.get('new_name', '').strip()
+        
+        if not session_id or not new_name:
+            return jsonify({'success': False, 'message': 'Missing parameters'}), 400
+        
+        base_dir = Path(__file__).parent / "live_sessions"
+        session_dir = base_dir / session_id
+        stats_file = session_dir / "stats.json"
+        
+        if not stats_file.exists():
+            return jsonify({'success': False, 'message': 'Session not found'}), 404
+        
+        # Load stats
+        with open(stats_file, 'r') as f:
+            stats = json.load(f)
+        
+        # Update route name
+        stats['route_name'] = new_name
+        
+        # Save back
+        with open(stats_file, 'w') as f:
+            json.dump(stats, f, indent=2)
+        
+        return jsonify({'success': True})
+    
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+
+@app.route('/api/sessions/delete', methods=['POST'])
+def session_delete():
+    """Delete a saved route"""
+    try:
+        import shutil
+        
+        data = request.json
+        session_id = data.get('session_id')
+        
+        if not session_id:
+            return jsonify({'success': False, 'message': 'Missing session_id'}), 400
+        
+        base_dir = Path(__file__).parent / "live_sessions"
+        session_dir = base_dir / session_id
+        
+        if not session_dir.exists():
+            return jsonify({'success': False, 'message': 'Session not found'}), 404
+        
+        # Delete entire session directory
+        shutil.rmtree(session_dir)
+        
+        return jsonify({'success': True})
+    
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+
+# ============================================
+# STATIC FILES
+# ============================================
+
+@app.route('/static/<path:filename>')
+def serve_static(filename):
+    """Serve static files (demo images, etc.)"""
+    static_dir = Path(__file__).parent / 'static'
+    return send_from_directory(static_dir, filename)
+
+
+@app.route('/damages/<path:filename>')
+def serve_damage_image(filename):
+    """Serve damage images from damages folder"""
+    damages_dir = Path(__file__).parent / 'damages'
+    return send_from_directory(damages_dir, filename)
+
+
+@app.route('/surfaces/<path:filename>')
+def serve_surface_image(filename):
+    """Serve surface images from surfaces folder"""
+    surfaces_dir = Path(__file__).parent / 'surfaces'
+    return send_from_directory(surfaces_dir, filename)
+
+
+@app.route('/routes/<path:filename>')
+def serve_route_image(filename):
+    """Serve route images from routes folder"""
+    routes_dir = Path(__file__).parent / 'routes'
+    return send_from_directory(routes_dir, filename)
 
 
 if __name__ == '__main__':

@@ -27,17 +27,11 @@ model:
   
   demo_mode: true  # true = Demo-Daten ohne echtes Modell, false = echtes Modell
   
-  # Klassen für Oberflächentypen
+  # Klassen für Oberflächentypen (vereinfacht)
   surface_classes:
-    asphalt_excellent: 0  # Perfekter Asphalt
-    asphalt_good: 1       # Guter Zustand
-    asphalt_fair: 2       # Akzeptabel
-    asphalt_poor: 3       # Schlecht
-    concrete: 4           # Beton
-    cobblestone: 5        # Kopfsteinpflaster
-    paving_stones: 6      # Pflastersteine
-    gravel: 7             # Schotter
-    dirt: 8               # Unbefestigt
+    asphalt: 0           # Asphalt (alle Zustände)
+    cobblestone: 1       # Kopfsteinpflaster
+    unpaved: 2           # Unbefestigt/Schotter
   
   # Klassen für Schäden
   damage_classes:

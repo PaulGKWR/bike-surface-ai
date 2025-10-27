@@ -321,11 +321,12 @@ class AutoLiveSystem:
         self.current_position = pos
         timestamp = datetime.now().isoformat()
         
-        # Add to route
+        # Add to route (surface_type will be updated when detected)
         self.route_points.append({
             'timestamp': timestamp,
             'latitude': lat,
-            'longitude': lon
+            'longitude': lon,
+            'surface_type': self.current_surface  # Can be None initially
         })
         
         # Update distance
@@ -559,6 +560,23 @@ class AutoLiveSystem:
         if self.stats['duration_seconds'] > 0:
             self.stats['avg_speed_kmh'] = (self.stats['total_distance_km'] / self.stats['duration_seconds']) * 3600
         
+        # Add route metadata for saved routes feature
+        self.stats['route_name'] = self.session_id  # Default to timestamp, can be renamed later
+        self.stats['created_at'] = self.stats['start_time']
+        
+        # Add route summary for quick overview
+        self.stats['route_summary'] = {
+            'total_points': len(self.route_points),
+            'total_damages': len(self.damage_detections),
+            'distance_km': round(self.stats['total_distance_km'], 2),
+            'duration_minutes': round(self.stats['duration_seconds'] / 60, 1),
+            'surface_breakdown': self.stats['surfaces'].copy()
+        }
+        
+        # Save complete data for route replay
+        self.stats['route_points'] = self.route_points  # All points with surface types
+        self.stats['damages'] = [asdict(d) for d in self.damage_detections]  # All damages
+        
         stats_file = self.session_dir / "stats.json"
         with open(stats_file, 'w') as f:
             json.dump(self.stats, f, indent=2)
@@ -568,6 +586,21 @@ class AutoLiveSystem:
     def update_web_state(self):
         """Update state file for web UI"""
         try:
+            # Prepare route points (last 500 points with surface types)
+            recent_route = self.route_points[-500:] if len(self.route_points) > 500 else self.route_points
+            
+            # Prepare recent damages (last 50 with all details)
+            recent_damages_list = []
+            for d in self.damage_detections[-50:]:
+                recent_damages_list.append({
+                    'timestamp': d.timestamp,
+                    'latitude': d.latitude,
+                    'longitude': d.longitude,
+                    'damage_type': d.damage_type,
+                    'confidence': d.confidence,
+                    'severity': d.severity if hasattr(d, 'severity') else 'medium'
+                })
+            
             state = {
                 'is_running': self.running,
                 'session_id': self.session_id,
@@ -575,8 +608,8 @@ class AutoLiveSystem:
                 'stats': self.stats,
                 'current_position': self.current_position,
                 'current_surface': self.current_surface,
-                'recent_damages': [asdict(d) for d in self.damage_detections[-20:]],
-                'route_points': self.route_points[-100:]  # Last 100 points
+                'route_points': recent_route,  # Last 500 points for live tracking
+                'recent_damages': recent_damages_list  # Last 50 damages for map display
             }
             
             with open(self.state_file, 'w') as f:
